@@ -5,13 +5,21 @@ REQUIRED_PRODUCTION_ENV_VARS = [
     "CROWNPATH_SECRET_KEY",
 ]
 
+REQUIRED_PRODUCTION_FLAGS = {
+    "CROWNPATH_DEMO_MODE": "false",
+    "CROWNPATH_BACKUP_RESTORE_VERIFIED": "true",
+    "CROWNPATH_SECURITY_TESTS_VERIFIED": "true",
+    "CROWNPATH_OWNER_LAUNCH_APPROVED": "true",
+}
+
+
 def validate_startup():
     env = os.getenv("CROWNPATH_ENV", "development").lower()
 
     if env != "production":
         return {
             "environment": env,
-            "production_guard": "NOT_REQUIRED"
+            "production_guard": "NOT_REQUIRED",
         }
 
     missing = [
@@ -25,17 +33,19 @@ def validate_startup():
             + ", ".join(missing)
         )
 
-    if os.getenv("CROWNPATH_DEMO_MODE", "true").lower() != "false":
-        raise RuntimeError(
-            "CrownPath production startup blocked because demo mode is enabled."
-        )
+    invalid_flags = []
+    for name, expected in REQUIRED_PRODUCTION_FLAGS.items():
+        actual = os.getenv(name, "").lower()
+        if actual != expected:
+            invalid_flags.append(f"{name} must be {expected}")
 
-    if os.getenv("CROWNPATH_OWNER_LAUNCH_APPROVED", "false").lower() != "true":
+    if invalid_flags:
         raise RuntimeError(
-            "CrownPath production startup blocked pending owner launch approval."
+            "CrownPath production startup blocked. "
+            + "; ".join(invalid_flags)
         )
 
     return {
         "environment": env,
-        "production_guard": "PASSED"
+        "production_guard": "PASSED",
     }
