@@ -8,6 +8,24 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: crownpath
+          POSTGRES_PASSWORD: crownpath_ci_password
+          POSTGRES_DB: crownpath_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U crownpath -d crownpath_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      CROWNPATH_ENV: staging
+      CROWNPATH_SECRET_KEY: ci-only-secret-key-for-crownpath-tests-2026
+      CROWNPATH_DATABASE_URL: postgresql+psycopg://crownpath:crownpath_ci_password@localhost:5432/crownpath_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
