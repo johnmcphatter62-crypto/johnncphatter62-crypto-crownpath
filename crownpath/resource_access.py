@@ -1,43 +1,107 @@
 import uuid
-from datetime import datetime, timezone
-from crownpath.database import connect
-from crownpath.permissions import has_permission
-from crownpath.audit import record_audit
 
-def now_iso(): return datetime.now(timezone.utc).isoformat()
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from crownpath.audit import record_audit
+from crownpath.database import session
+from crownpath.models import ResourceAssignment
+from crownpath.permissions import has_permission
+
 
 def assign_resource(user_id, resource_type, resource_id, access_level="VIEW"):
-    con=connect()
+    assignment = ResourceAssignment(
+        assignment_id=f"CP-ASG-{uuid.uuid4().hex[:12].upper()}",
+        user_id=user_id,
+        resource_type=resource_type.upper(),
+        resource_id=resource_id,
+        access_level=access_level.upper(),
+    )
+    db = session()
     try:
-        con.execute("""INSERT OR IGNORE INTO resource_assignments
-        (assignment_id,user_id,resource_type,resource_id,access_level,created_at)
-        VALUES (?,?,?,?,?,?)""",
-        (f"CP-ASG-{uuid.uuid4().hex[:12].upper()}",user_id,resource_type.upper(),resource_id,access_level.upper(),now_iso()))
-        con.commit()
-    finally: con.close()
+        db.add(assignment)
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
 
 def has_assignment(user_id, resource_type, resource_id, access_level="VIEW"):
-    con=connect()
+    requested = access_level.upper()
+    db = session()
     try:
-        row=con.execute("""SELECT 1 FROM resource_assignments
-        WHERE user_id=? AND resource_type=? AND resource_id=?
-        AND access_level IN (?, 'MANAGE') LIMIT 1""",
-        (user_id,resource_type.upper(),resource_id,access_level.upper())).fetchone()
+        row = db.scalar(
+            select(ResourceAssignment).where(
+                ResourceAssignment.user_id == user_id,
+                ResourceAssignment.resource_type == resource_type.upper(),
+                ResourceAssignment.resource_id == resource_id,
+                ResourceAssignment.access_level.in_([requested, "MANAGE"]),
+            )
+        )
         return row is not None
-    finally: con.close()
+    finally:
+        db.close()
+
 
 def can_access_resource(user, permission, resource_type, resource_id, access_level="VIEW"):
-    if not has_permission(user,permission):
-        record_audit(user['user_id'],'RESOURCE_ACCESS','AUTHORIZATION','DENIED',resource_type,resource_id,f'Missing permission: {permission}')
+    if not has_permission(user, permission):
+        record_audit(
+            user["user_id"],
+            "RESOURCE_ACCESS",
+            "AUTHORIZATION",
+            "DENIED",
+            resource_type,
+            resource_id,
+            f"Missing permission: {permission}",
+        )
         return False
-    if user['role'].upper()=='OWNER':
-        record_audit(user['user_id'],'RESOURCE_ACCESS','AUTHORIZATION','ALLOWED',resource_type,resource_id,'Owner access')
+
+    if user["role"].upper() == "OWNER":
+        record_audit(
+            user["user_id"],
+            "RESOURCE_ACCESS",
+            "AUTHORIZATION",
+            "ALLOWED",
+            resource_type,
+            resource_id,
+            "Owner access",
+        )
         return True
-    if resource_type.upper()=='LEARNER' and resource_id==user['user_id']:
-        record_audit(user['user_id'],'RESOURCE_ACCESS','AUTHORIZATION','ALLOWED',resource_type,resource_id,'Self access')
+
+    if resource_type.upper() == "LEARNER" and resource_id == user["user_id"]:
+        record_audit(
+            user["user_id"],
+            "RESOURCE_ACCESS",
+            "AUTHORIZATION",
+            "ALLOWED",
+            resource_type,
+            resource_id,
+            "Self access",
+        )
         return True
-    if has_assignment(user['user_id'],resource_type,resource_id,access_level):
-        record_audit(user['user_id'],'RESOURCE_ACCESS','AUTHORIZATION','ALLOWED',resource_type,resource_id,'Assigned resource')
+
+    if has_assignment(user["user_id"], resource_type, resource_id, access_level):
+        record_audit(
+            user["user_id"],
+            "RESOURCE_ACCESS",
+            "AUTHORIZATION",
+            "ALLOWED",
+            resource_type,
+            resource_id,
+            "Assigned resource",
+        )
         return True
-    record_audit(user['user_id'],'RESOURCE_ACCESS','AUTHORIZATION','DENIED',resource_type,resource_id,'No object-level assignment')
+
+    record_audit(
+        user["user_id"],
+        "RESOURCE_ACCESS",
+        "AUTHORIZATION",
+        "DENIED",
+        resource_type,
+        resource_id,
+        "No object-level assignment",
+    )
     return False
