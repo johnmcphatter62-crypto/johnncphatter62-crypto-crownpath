@@ -23,6 +23,7 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     env:
+      PYTHONPATH: ${{ github.workspace }}
       CROWNPATH_ENV: staging
       CROWNPATH_SECRET_KEY: ci-only-secret-key-for-crownpath-tests-2026
       CROWNPATH_DATABASE_URL: postgresql+psycopg://crownpath:crownpath_ci_password@localhost:5432/crownpath_ci
@@ -39,4 +40,4 @@ jobs:
       - name: Compile Python
         run: python -m compileall crownpath api
       - name: Run tests
-        run: pytest -q
+        run: python -m pytest -q
