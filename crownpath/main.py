@@ -22,6 +22,8 @@ startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
 FRONTEND_DIR=BASE_DIR/"frontend"
 DEMO_MODE=os.getenv("CROWNPATH_DEMO_MODE","true").lower()=="true"
+REQUIRE_HTTPS=os.getenv("CROWNPATH_REQUIRE_HTTPS","false").lower()=="true"
+COOKIE_SECURE=REQUIRE_HTTPS or not DEMO_MODE
 init_db(); seed_audio_stations(); seed_audio_zones(); seed_devices()
 app.mount("/static",StaticFiles(directory=FRONTEND_DIR),name="static")
 
@@ -60,7 +62,7 @@ def register(payload:RegisterRequest,response:Response):
     except ValueError as exc: raise HTTPException(400,str(exc))
     except Exception: raise HTTPException(409,"Account could not be created.")
     token=create_access_token(user["user_id"])
-    response.set_cookie("crownpath_session",token,httponly=True,secure=not DEMO_MODE,samesite="lax",max_age=1800,path="/")
+    response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(user)}
 
 @app.post("/api/auth/login")
@@ -70,7 +72,7 @@ def login(payload:LoginRequest,response:Response):
     if not user: raise HTTPException(401,"Invalid sign-in.")
     if user["mfa_enabled"]: return {"authenticated":False,"mfa_required":True,"user_id":user["user_id"]}
     token=create_access_token(user["user_id"])
-    response.set_cookie("crownpath_session",token,httponly=True,secure=not DEMO_MODE,samesite="lax",max_age=1800,path="/")
+    response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(user)}
 
 @app.post("/api/auth/logout")
