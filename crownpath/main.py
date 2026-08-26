@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 from crownpath.database import init_db
-from crownpath.auth import authenticate, create_access_token, create_user, decode_access_token, get_user_by_id, public_user
+from crownpath.auth import authenticate, create_access_token, create_user, create_owner, decode_access_token, get_user_by_id, owner_exists, public_user
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
 from crownpath.startup_guard import validate_startup
@@ -16,7 +16,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 
-app=FastAPI(title="CrownPath",version="1.5.0-github")
+app=FastAPI(title="CrownPath",version="1.6.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -32,6 +32,11 @@ class RegisterRequest(BaseModel):
     email:EmailStr
     password:str=Field(min_length=12,max_length=128)
     role:str="HOME_CARE"
+class OwnerActivateRequest(BaseModel):
+    name:str=Field(min_length=2,max_length=100)
+    email:EmailStr
+    password:str=Field(min_length=12,max_length=128)
+    activation_code:str=Field(min_length=16,max_length=256)
 class LoginRequest(BaseModel):
     email:EmailStr
     password:str
@@ -54,7 +59,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.5.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.6.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -64,6 +69,18 @@ def register(payload:RegisterRequest,response:Response):
     token=create_access_token(user["user_id"])
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(user)}
+
+@app.get("/api/auth/owner-activation/status")
+def owner_activation_status():
+    return {"available":not owner_exists() and bool(os.getenv("CROWNPATH_OWNER_EMAIL")) and bool(os.getenv("CROWNPATH_OWNER_ACTIVATION_CODE"))}
+
+@app.post("/api/auth/owner-activation")
+def owner_activation(payload:OwnerActivateRequest,response:Response):
+    try: user=create_owner(payload.name,str(payload.email),payload.password,payload.activation_code)
+    except ValueError as exc: raise HTTPException(400,str(exc))
+    token=create_access_token(user["user_id"])
+    response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
+    return {"authenticated":True,"owner_activated":True,"user":public_user(user)}
 
 @app.post("/api/auth/login")
 def login(payload:LoginRequest,response:Response):
