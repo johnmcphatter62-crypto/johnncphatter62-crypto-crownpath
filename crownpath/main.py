@@ -16,7 +16,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 
-app=FastAPI(title="CrownPath",version="1.6.0-github")
+app=FastAPI(title="CrownPath",version="1.6.1-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -36,7 +36,7 @@ class OwnerActivateRequest(BaseModel):
     name:str=Field(min_length=2,max_length=100)
     email:EmailStr
     password:str=Field(min_length=12,max_length=128)
-    activation_code:str=Field(min_length=16,max_length=256)
+    activation_code:str=Field(min_length=6,max_length=64)
 class LoginRequest(BaseModel):
     email:EmailStr
     password:str
@@ -59,7 +59,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.6.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.6.1-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
