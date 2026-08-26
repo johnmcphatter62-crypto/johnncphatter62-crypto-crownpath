@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import os
 import secrets
 import uuid
@@ -21,7 +22,6 @@ ACCESS_TOKEN_MINUTES = 30
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
-# Production/staging should set this in Railway's secret manager.
 SECRET_KEY = os.getenv("CROWNPATH_SECRET_KEY") or secrets.token_hex(32)
 
 ALLOWED_SELF_REGISTER_ROLES = {
@@ -153,6 +153,54 @@ def create_user(name: str, email: str, password: str, role: str):
     except IntegrityError as exc:
         db.rollback()
         raise ValueError("An account with that email already exists.") from exc
+    finally:
+        db.close()
+
+
+def owner_exists() -> bool:
+    db = session()
+    try:
+        return db.scalar(select(User.user_id).where(User.role == "OWNER").limit(1)) is not None
+    finally:
+        db.close()
+
+
+def create_owner(name: str, email: str, password: str, activation_code: str):
+    configured_email = os.getenv("CROWNPATH_OWNER_EMAIL", "").strip().lower()
+    configured_code = os.getenv("CROWNPATH_OWNER_ACTIVATION_CODE", "")
+    supplied_email = email.strip().lower()
+
+    if not configured_email or not configured_code:
+        raise ValueError("Owner activation is not configured.")
+    if supplied_email != configured_email:
+        raise ValueError("Owner activation identity does not match.")
+    if not hmac.compare_digest(activation_code, configured_code):
+        raise ValueError("Invalid owner activation code.")
+    if owner_exists():
+        raise ValueError("Owner activation is already complete.")
+
+    user = User(
+        user_id=f"CP-USR-{uuid.uuid4().hex[:12].upper()}",
+        name=name.strip(),
+        email=supplied_email,
+        password_hash=hash_password(password),
+        role="OWNER",
+        track="OWNER",
+        active=True,
+        email_verified=True,
+        mfa_enabled=False,
+        failed_login_attempts=0,
+        created_at=now_utc(),
+    )
+    db = session()
+    try:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return _user_dict(user)
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("Owner account could not be created.") from exc
     finally:
         db.close()
 
