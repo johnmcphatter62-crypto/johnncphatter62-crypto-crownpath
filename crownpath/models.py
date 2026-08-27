@@ -22,6 +22,17 @@ class User(Base):
     last_login_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
 
+class InstructorRequest(Base):
+    __tablename__="instructor_requests"
+    request_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    user_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    statement: Mapped[str|None]=mapped_column(Text)
+    status: Mapped[str]=mapped_column(String(20),nullable=False,default="PENDING",index=True)
+    reviewed_by: Mapped[str|None]=mapped_column(String(64),ForeignKey("users.user_id"))
+    review_note: Mapped[str|None]=mapped_column(Text)
+    reviewed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc,index=True)
+
 class AuthToken(Base):
     __tablename__="auth_tokens"
     token_id: Mapped[str]=mapped_column(String(64),primary_key=True)
