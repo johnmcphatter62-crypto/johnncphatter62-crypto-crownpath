@@ -1,10 +1,14 @@
 import os
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
-from crownpath.database import init_db
+from sqlalchemy import select
+from crownpath.database import init_db, session
+from crownpath.models import InstructorRequest, User
 from crownpath.auth import authenticate, create_access_token, create_user, create_owner, decode_access_token, get_user_by_id, owner_exists, public_user, list_users, set_user_role, set_user_active
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
@@ -16,7 +20,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 
-app=FastAPI(title="CrownPath",version="1.7.0-github")
+app=FastAPI(title="CrownPath",version="1.8.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -45,6 +49,11 @@ class RoleUpdateRequest(BaseModel):
     active:bool|None=None
 class ActiveUpdateRequest(BaseModel):
     active:bool
+class InstructorRequestCreate(BaseModel):
+    statement:str=Field(min_length=10,max_length=1000)
+class InstructorReviewRequest(BaseModel):
+    decision:str
+    note:str|None=Field(default=None,max_length=1000)
 
 def current_user(request:Request):
     token=request.cookies.get("crownpath_session")
@@ -59,12 +68,15 @@ def require_permission(permission:str):
         return user
     return dependency
 
+def request_dict(item:InstructorRequest):
+    return {"request_id":item.request_id,"user_id":item.user_id,"statement":item.statement,"status":item.status,"reviewed_by":item.reviewed_by,"review_note":item.review_note,"reviewed_at":item.reviewed_at,"created_at":item.created_at}
+
 @app.get("/")
 def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.7.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.8.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -105,24 +117,76 @@ def logout(response:Response):
 def me(user=Depends(current_user)):
     data=public_user(user); data["permissions"]=sorted(permissions_for_role(user["role"])); return data
 
+@app.post("/api/instructor-requests")
+def submit_instructor_request(payload:InstructorRequestCreate,user=Depends(current_user)):
+    if user["role"] in {"OWNER","INSTRUCTOR"}: raise HTTPException(400,"This account does not need an Instructor request.")
+    db=session()
+    try:
+        pending=db.scalar(select(InstructorRequest).where(InstructorRequest.user_id==user["user_id"],InstructorRequest.status=="PENDING"))
+        if pending: raise HTTPException(409,"An Instructor request is already pending.")
+        item=InstructorRequest(request_id=f"CP-IR-{uuid.uuid4().hex[:12].upper()}",user_id=user["user_id"],statement=payload.statement.strip(),status="PENDING",created_at=datetime.now(timezone.utc))
+        db.add(item); db.commit(); db.refresh(item)
+        return {"request":request_dict(item)}
+    finally: db.close()
+
+@app.get("/api/instructor-requests/me")
+def my_instructor_requests(user=Depends(current_user)):
+    db=session()
+    try:
+        items=db.scalars(select(InstructorRequest).where(InstructorRequest.user_id==user["user_id"]).order_by(InstructorRequest.created_at.desc())).all()
+        return {"requests":[request_dict(item) for item in items]}
+    finally: db.close()
+
+@app.get("/api/owner/instructor-requests")
+def owner_instructor_requests(user=Depends(require_permission("staff.manage"))):
+    db=session()
+    try:
+        items=db.scalars(select(InstructorRequest).order_by(InstructorRequest.created_at.desc())).all()
+        result=[]
+        for item in items:
+            applicant=db.get(User,item.user_id)
+            data=request_dict(item)
+            data["applicant"]={"name":applicant.name,"email":applicant.email,"role":applicant.role,"active":applicant.active} if applicant else None
+            result.append(data)
+        return {"requests":result}
+    finally: db.close()
+
+@app.patch("/api/owner/instructor-requests/{request_id}")
+def owner_review_instructor_request(request_id:str,payload:InstructorReviewRequest,user=Depends(require_permission("staff.manage"))):
+    decision=payload.decision.strip().upper()
+    if decision not in {"APPROVE","DENY"}: raise HTTPException(400,"Decision must be APPROVE or DENY.")
+    db=session()
+    try:
+        item=db.get(InstructorRequest,request_id)
+        if not item: raise HTTPException(404,"Instructor request not found.")
+        if item.status!="PENDING": raise HTTPException(409,"Instructor request has already been reviewed.")
+        applicant=db.get(User,item.user_id)
+        if not applicant: raise HTTPException(404,"Applicant account not found.")
+        if applicant.role=="OWNER": raise HTTPException(400,"Owner account cannot be changed here.")
+        item.status="APPROVED" if decision=="APPROVE" else "DENIED"
+        item.reviewed_by=user["user_id"]
+        item.review_note=(payload.note or "").strip() or None
+        item.reviewed_at=datetime.now(timezone.utc)
+        if decision=="APPROVE":
+            applicant.role="INSTRUCTOR"; applicant.track="INSTRUCTOR"; applicant.active=True
+        db.commit(); db.refresh(item)
+        return {"request":request_dict(item),"applicant":public_user(get_user_by_id(applicant.user_id))}
+    finally: db.close()
+
 @app.get("/api/owner/users")
 def owner_users(user=Depends(require_permission("staff.manage"))):
     return {"users":[public_user(item) for item in list_users()]}
 
 @app.patch("/api/owner/users/{user_id}/role")
 def owner_update_role(user_id:str,payload:RoleUpdateRequest,user=Depends(require_permission("staff.manage"))):
-    try:
-        updated=set_user_role(user_id,payload.role,payload.active)
-    except ValueError as exc:
-        raise HTTPException(400,str(exc))
+    try: updated=set_user_role(user_id,payload.role,payload.active)
+    except ValueError as exc: raise HTTPException(400,str(exc))
     return {"user":public_user(updated)}
 
 @app.patch("/api/owner/users/{user_id}/active")
 def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(require_permission("staff.manage"))):
-    try:
-        updated=set_user_active(user_id,payload.active)
-    except ValueError as exc:
-        raise HTTPException(400,str(exc))
+    try: updated=set_user_active(user_id,payload.active)
+    except ValueError as exc: raise HTTPException(400,str(exc))
     return {"user":public_user(updated)}
 
 @app.get("/api/avatar/startup/{role}")
