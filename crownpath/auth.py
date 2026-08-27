@@ -179,28 +179,42 @@ def create_owner(name: str, email: str, password: str, activation_code: str):
     if owner_exists():
         raise ValueError("Owner activation is already complete.")
 
-    user = User(
-        user_id=f"CP-USR-{uuid.uuid4().hex[:12].upper()}",
-        name=name.strip(),
-        email=supplied_email,
-        password_hash=hash_password(password),
-        role="OWNER",
-        track="OWNER",
-        active=True,
-        email_verified=True,
-        mfa_enabled=False,
-        failed_login_attempts=0,
-        created_at=now_utc(),
-    )
     db = session()
     try:
+        existing = db.scalar(select(User).where(User.email == supplied_email))
+        if existing:
+            existing.name = name.strip()
+            existing.password_hash = hash_password(password)
+            existing.role = "OWNER"
+            existing.track = "OWNER"
+            existing.active = True
+            existing.email_verified = True
+            existing.failed_login_attempts = 0
+            existing.locked_until = None
+            db.commit()
+            db.refresh(existing)
+            return _user_dict(existing)
+
+        user = User(
+            user_id=f"CP-USR-{uuid.uuid4().hex[:12].upper()}",
+            name=name.strip(),
+            email=supplied_email,
+            password_hash=hash_password(password),
+            role="OWNER",
+            track="OWNER",
+            active=True,
+            email_verified=True,
+            mfa_enabled=False,
+            failed_login_attempts=0,
+            created_at=now_utc(),
+        )
         db.add(user)
         db.commit()
         db.refresh(user)
         return _user_dict(user)
     except IntegrityError as exc:
         db.rollback()
-        raise ValueError("Owner account could not be created.") from exc
+        raise ValueError("Owner account could not be activated.") from exc
     finally:
         db.close()
 
