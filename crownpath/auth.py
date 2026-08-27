@@ -219,6 +219,55 @@ def create_owner(name: str, email: str, password: str, activation_code: str):
         db.close()
 
 
+def list_users(role: str | None = None):
+    db = session()
+    try:
+        stmt = select(User).order_by(User.created_at.asc())
+        if role:
+            stmt = stmt.where(User.role == role.upper())
+        return [_user_dict(user) for user in db.scalars(stmt).all()]
+    finally:
+        db.close()
+
+
+def set_user_role(user_id: str, role: str, active: bool | None = None):
+    role = role.upper()
+    if role not in {"INSTRUCTOR", "BARBER", "COSMETOLOGY_PRO", "HOME_CARE"}:
+        raise ValueError("Unsupported staff or learner role.")
+    db = session()
+    try:
+        user = db.get(User, user_id)
+        if not user:
+            raise ValueError("User not found.")
+        if user.role == "OWNER":
+            raise ValueError("Owner role cannot be changed here.")
+        user.role = role
+        user.track = role
+        if active is not None:
+            user.active = bool(active)
+        db.commit()
+        db.refresh(user)
+        return _user_dict(user)
+    finally:
+        db.close()
+
+
+def set_user_active(user_id: str, active: bool):
+    db = session()
+    try:
+        user = db.get(User, user_id)
+        if not user:
+            raise ValueError("User not found.")
+        if user.role == "OWNER" and not active:
+            raise ValueError("Owner account cannot be disabled here.")
+        user.active = bool(active)
+        db.commit()
+        db.refresh(user)
+        return _user_dict(user)
+    finally:
+        db.close()
+
+
 def get_user_by_email(email: str):
     db = session()
     try:
