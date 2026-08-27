@@ -6,107 +6,37 @@ const ownerMessage=document.querySelector('#ownerMessage');
 const sessionCard=document.querySelector('#sessionCard');
 const ownerActivation=document.querySelector('#ownerActivation');
 const ownerPanel=document.querySelector('#ownerPanel');
+const instructorRequestPanel=document.querySelector('#instructorRequestPanel');
+const instructorRequestMessage=document.querySelector('#instructorRequestMessage');
+const requestReviewMessage=document.querySelector('#requestReviewMessage');
+const requestList=document.querySelector('#requestList');
 const ownerPanelMessage=document.querySelector('#ownerPanelMessage');
 const userList=document.querySelector('#userList');
 
 async function jsonRequest(url,options={}){
   const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
-  let data={};
-  try{data=await response.json()}catch(_){data={}}
-  if(!response.ok) throw new Error(data.detail||'CrownPath request could not be completed.');
-  return data;
+  let data={};try{data=await response.json()}catch(_){data={}}
+  if(!response.ok) throw new Error(data.detail||'CrownPath request could not be completed.');return data;
 }
+async function showHealth(){try{output.textContent=JSON.stringify(await jsonRequest('/api/health'),null,2)}catch(e){output.textContent='CrownPath health check unavailable: '+e.message}}
+function showSession(user){sessionCard.hidden=false;document.querySelector('#sessionName').textContent=user.name||user.email||'CrownPath User';document.querySelector('#sessionRole').textContent='Role: '+String(user.role||'').replaceAll('_',' ');ownerPanel.hidden=user.role!=='OWNER';instructorRequestPanel.hidden=['OWNER','INSTRUCTOR'].includes(user.role);if(user.role==='OWNER'){ownerActivation.hidden=true;loadOwnerUsers();loadInstructorRequests()}else{loadMyInstructorRequests()}}
+function clearSession(){sessionCard.hidden=true;ownerPanel.hidden=true;instructorRequestPanel.hidden=true;userList.innerHTML='';requestList.innerHTML=''}
+async function checkSession(){try{showSession(await jsonRequest('/api/auth/me'))}catch(_){clearSession()}}
+async function checkOwnerActivation(){try{const data=await jsonRequest('/api/auth/owner-activation/status');ownerActivation.hidden=!data.available}catch(_){ownerActivation.hidden=true}}
+function userCard(user){const wrap=document.createElement('div');wrap.className='session-card';wrap.style.marginTop='12px';const identity=document.createElement('div');const name=document.createElement('strong');name.textContent=user.name||'CrownPath User';const meta=document.createElement('span');meta.textContent=`${user.email} • ${String(user.role).replaceAll('_',' ')} • ${user.active?'Active':'Disabled'}`;identity.append(name,document.createElement('br'),meta);wrap.append(identity);if(user.role!=='OWNER'){const controls=document.createElement('div');controls.className='actions';const select=document.createElement('select');[['INSTRUCTOR','Instructor'],['HOME_CARE','Home Care Learner'],['BARBER','Barber Learner'],['COSMETOLOGY_PRO','Cosmetology Learner']].forEach(([value,label])=>{const option=document.createElement('option');option.value=value;option.textContent=label;option.selected=value===user.role;select.append(option)});const save=document.createElement('button');save.type='button';save.textContent='Save Role';save.addEventListener('click',()=>updateRole(user.user_id,select.value));const toggle=document.createElement('button');toggle.type='button';toggle.textContent=user.active?'Disable Access':'Enable Access';toggle.addEventListener('click',()=>updateActive(user.user_id,!user.active));controls.append(select,save,toggle);wrap.append(controls)}return wrap}
+async function loadOwnerUsers(){ownerPanelMessage.textContent='Loading CrownPath accounts…';try{const data=await jsonRequest('/api/owner/users');userList.innerHTML='';data.users.forEach(user=>userList.append(userCard(user)));ownerPanelMessage.textContent=`${data.users.length} account(s) loaded.`}catch(e){ownerPanelMessage.textContent=e.message}}
+async function updateRole(userId,role){ownerPanelMessage.textContent='Updating role…';try{await jsonRequest(`/api/owner/users/${encodeURIComponent(userId)}/role`,{method:'PATCH',body:JSON.stringify({role})});await loadOwnerUsers()}catch(e){ownerPanelMessage.textContent=e.message}}
+async function updateActive(userId,active){ownerPanelMessage.textContent=active?'Enabling account…':'Disabling account…';try{await jsonRequest(`/api/owner/users/${encodeURIComponent(userId)}/active`,{method:'PATCH',body:JSON.stringify({active})});await loadOwnerUsers()}catch(e){ownerPanelMessage.textContent=e.message}}
+function requestCard(item){const wrap=document.createElement('div');wrap.className='session-card';wrap.style.marginTop='12px';const info=document.createElement('div');const title=document.createElement('strong');title.textContent=item.applicant?.name||'CrownPath Applicant';const meta=document.createElement('span');meta.textContent=`${item.applicant?.email||''} • ${item.status}`;const statement=document.createElement('p');statement.textContent=item.statement||'';info.append(title,document.createElement('br'),meta,statement);wrap.append(info);if(item.status==='PENDING'){const controls=document.createElement('div');controls.className='actions';const approve=document.createElement('button');approve.type='button';approve.textContent='Approve Instructor';approve.addEventListener('click',()=>reviewInstructorRequest(item.request_id,'APPROVE'));const deny=document.createElement('button');deny.type='button';deny.textContent='Deny';deny.addEventListener('click',()=>reviewInstructorRequest(item.request_id,'DENY'));controls.append(approve,deny);wrap.append(controls)}return wrap}
+async function loadInstructorRequests(){requestReviewMessage.textContent='Loading Instructor requests…';try{const data=await jsonRequest('/api/owner/instructor-requests');requestList.innerHTML='';data.requests.forEach(item=>requestList.append(requestCard(item)));requestReviewMessage.textContent=data.requests.length?`${data.requests.length} request(s) loaded.`:'No Instructor requests yet.'}catch(e){requestReviewMessage.textContent=e.message}}
+async function reviewInstructorRequest(requestId,decision){requestReviewMessage.textContent=decision==='APPROVE'?'Approving Instructor…':'Denying request…';try{await jsonRequest(`/api/owner/instructor-requests/${encodeURIComponent(requestId)}`,{method:'PATCH',body:JSON.stringify({decision})});await loadInstructorRequests();await loadOwnerUsers()}catch(e){requestReviewMessage.textContent=e.message}}
+async function loadMyInstructorRequests(){try{const data=await jsonRequest('/api/instructor-requests/me');const pending=data.requests.find(item=>item.status==='PENDING');instructorRequestMessage.textContent=pending?'Your Instructor request is pending Owner review.':''}catch(_){}}
 
-async function showHealth(){
-  try{output.textContent=JSON.stringify(await jsonRequest('/api/health'),null,2)}
-  catch(e){output.textContent='CrownPath health check unavailable: '+e.message}
-}
-
-function showSession(user){
-  sessionCard.hidden=false;
-  document.querySelector('#sessionName').textContent=user.name||user.email||'CrownPath User';
-  document.querySelector('#sessionRole').textContent='Role: '+String(user.role||'').replaceAll('_',' ');
-  ownerPanel.hidden=user.role!=='OWNER';
-  if(user.role==='OWNER'){ownerActivation.hidden=true;loadOwnerUsers()}
-}
-
-function clearSession(){sessionCard.hidden=true;ownerPanel.hidden=true;userList.innerHTML=''}
-
-async function checkSession(){
-  try{showSession(await jsonRequest('/api/auth/me'))}
-  catch(_){clearSession()}
-}
-
-async function checkOwnerActivation(){
-  try{const data=await jsonRequest('/api/auth/owner-activation/status');ownerActivation.hidden=!data.available}
-  catch(_){ownerActivation.hidden=true}
-}
-
-function userCard(user){
-  const wrap=document.createElement('div');wrap.className='session-card';wrap.style.marginTop='12px';
-  const identity=document.createElement('div');
-  const name=document.createElement('strong');name.textContent=user.name||'CrownPath User';
-  const meta=document.createElement('span');meta.textContent=`${user.email} • ${String(user.role).replaceAll('_',' ')} • ${user.active?'Active':'Disabled'}`;
-  identity.append(name,document.createElement('br'),meta);wrap.append(identity);
-  if(user.role!=='OWNER'){
-    const controls=document.createElement('div');controls.className='actions';
-    const select=document.createElement('select');
-    [['INSTRUCTOR','Instructor'],['HOME_CARE','Home Care Learner'],['BARBER','Barber Learner'],['COSMETOLOGY_PRO','Cosmetology Learner']].forEach(([value,label])=>{const option=document.createElement('option');option.value=value;option.textContent=label;option.selected=value===user.role;select.append(option)});
-    const save=document.createElement('button');save.type='button';save.textContent='Save Role';save.addEventListener('click',()=>updateRole(user.user_id,select.value));
-    const toggle=document.createElement('button');toggle.type='button';toggle.textContent=user.active?'Disable Access':'Enable Access';toggle.addEventListener('click',()=>updateActive(user.user_id,!user.active));
-    controls.append(select,save,toggle);wrap.append(controls);
-  }
-  return wrap;
-}
-
-async function loadOwnerUsers(){
-  ownerPanelMessage.textContent='Loading CrownPath accounts…';
-  try{const data=await jsonRequest('/api/owner/users');userList.innerHTML='';data.users.forEach(user=>userList.append(userCard(user)));ownerPanelMessage.textContent=`${data.users.length} account(s) loaded.`}
-  catch(e){ownerPanelMessage.textContent=e.message}
-}
-
-async function updateRole(userId,role){
-  ownerPanelMessage.textContent='Updating role…';
-  try{await jsonRequest(`/api/owner/users/${encodeURIComponent(userId)}/role`,{method:'PATCH',body:JSON.stringify({role})});ownerPanelMessage.textContent='Role updated successfully.';await loadOwnerUsers()}
-  catch(e){ownerPanelMessage.textContent=e.message}
-}
-
-async function updateActive(userId,active){
-  ownerPanelMessage.textContent=active?'Enabling account…':'Disabling account…';
-  try{await jsonRequest(`/api/owner/users/${encodeURIComponent(userId)}/active`,{method:'PATCH',body:JSON.stringify({active})});ownerPanelMessage.textContent=active?'Account enabled.':'Account disabled.';await loadOwnerUsers()}
-  catch(e){ownerPanelMessage.textContent=e.message}
-}
-
-document.querySelector('#health').addEventListener('click',showHealth);
-document.querySelector('#signInJump').addEventListener('click',()=>document.querySelector('#access').scrollIntoView({behavior:'smooth'}));
-document.querySelector('#refreshUsers').addEventListener('click',loadOwnerUsers);
-
-document.querySelectorAll('[data-role]').forEach(b=>b.addEventListener('click',async()=>{
-  try{const d=await jsonRequest('/api/avatar/startup/'+b.dataset.role);guide.textContent=d.message}
-  catch(_){guide.textContent='Avatar guide is temporarily unavailable.'}
-}));
-
-document.querySelector('#ownerActivationForm').addEventListener('submit',async event=>{
-  event.preventDefault();ownerMessage.textContent='Activating Owner account…';
-  try{const data=await jsonRequest('/api/auth/owner-activation',{method:'POST',body:JSON.stringify({name:document.querySelector('#ownerName').value,email:document.querySelector('#ownerEmail').value,password:document.querySelector('#ownerPassword').value,activation_code:document.querySelector('#ownerCode').value})});ownerMessage.textContent='Owner account activated successfully.';showSession(data.user);event.target.reset();ownerActivation.hidden=true}
-  catch(e){ownerMessage.textContent=e.message}
-});
-
-document.querySelector('#loginForm').addEventListener('submit',async event=>{
-  event.preventDefault();loginMessage.textContent='Signing in…';
-  try{const data=await jsonRequest('/api/auth/login',{method:'POST',body:JSON.stringify({email:document.querySelector('#loginEmail').value,password:document.querySelector('#loginPassword').value})});if(data.mfa_required){loginMessage.textContent='Multi-factor authentication is required for this account.';return}loginMessage.textContent='Signed in successfully.';showSession(data.user);event.target.reset()}
-  catch(e){loginMessage.textContent=e.message}
-});
-
-document.querySelector('#registerForm').addEventListener('submit',async event=>{
-  event.preventDefault();registerMessage.textContent='Creating account…';
-  try{const data=await jsonRequest('/api/auth/register',{method:'POST',body:JSON.stringify({name:document.querySelector('#registerName').value,email:document.querySelector('#registerEmail').value,password:document.querySelector('#registerPassword').value,role:document.querySelector('#registerRole').value})});registerMessage.textContent='Learner account created and signed in.';showSession(data.user);event.target.reset()}
-  catch(e){registerMessage.textContent=e.message}
-});
-
-document.querySelector('#logoutButton').addEventListener('click',async()=>{
-  try{await jsonRequest('/api/auth/logout',{method:'POST'});clearSession();loginMessage.textContent='Signed out.'}
-  catch(e){loginMessage.textContent=e.message}
-});
-
+document.querySelector('#health').addEventListener('click',showHealth);document.querySelector('#signInJump').addEventListener('click',()=>document.querySelector('#access').scrollIntoView({behavior:'smooth'}));document.querySelector('#refreshUsers').addEventListener('click',loadOwnerUsers);document.querySelector('#refreshRequests').addEventListener('click',loadInstructorRequests);
+document.querySelectorAll('[data-role]').forEach(b=>b.addEventListener('click',async()=>{try{const d=await jsonRequest('/api/avatar/startup/'+b.dataset.role);guide.textContent=d.message}catch(_){guide.textContent='Avatar guide is temporarily unavailable.'}}));
+document.querySelector('#instructorRequestForm').addEventListener('submit',async event=>{event.preventDefault();instructorRequestMessage.textContent='Submitting Instructor request…';try{await jsonRequest('/api/instructor-requests',{method:'POST',body:JSON.stringify({statement:document.querySelector('#instructorStatement').value})});instructorRequestMessage.textContent='Instructor request submitted for Owner review.';event.target.reset()}catch(e){instructorRequestMessage.textContent=e.message}});
+document.querySelector('#ownerActivationForm').addEventListener('submit',async event=>{event.preventDefault();ownerMessage.textContent='Activating Owner account…';try{const data=await jsonRequest('/api/auth/owner-activation',{method:'POST',body:JSON.stringify({name:document.querySelector('#ownerName').value,email:document.querySelector('#ownerEmail').value,password:document.querySelector('#ownerPassword').value,activation_code:document.querySelector('#ownerCode').value})});ownerMessage.textContent='Owner account activated successfully.';showSession(data.user);event.target.reset();ownerActivation.hidden=true}catch(e){ownerMessage.textContent=e.message}});
+document.querySelector('#loginForm').addEventListener('submit',async event=>{event.preventDefault();loginMessage.textContent='Signing in…';try{const data=await jsonRequest('/api/auth/login',{method:'POST',body:JSON.stringify({email:document.querySelector('#loginEmail').value,password:document.querySelector('#loginPassword').value})});if(data.mfa_required){loginMessage.textContent='Multi-factor authentication is required for this account.';return}loginMessage.textContent='Signed in successfully.';showSession(data.user);event.target.reset()}catch(e){loginMessage.textContent=e.message}});
+document.querySelector('#registerForm').addEventListener('submit',async event=>{event.preventDefault();registerMessage.textContent='Creating account…';try{const data=await jsonRequest('/api/auth/register',{method:'POST',body:JSON.stringify({name:document.querySelector('#registerName').value,email:document.querySelector('#registerEmail').value,password:document.querySelector('#registerPassword').value,role:document.querySelector('#registerRole').value})});registerMessage.textContent='Learner account created and signed in.';showSession(data.user);event.target.reset()}catch(e){registerMessage.textContent=e.message}});
+document.querySelector('#logoutButton').addEventListener('click',async()=>{try{await jsonRequest('/api/auth/logout',{method:'POST'});clearSession();loginMessage.textContent='Signed out.'}catch(e){loginMessage.textContent=e.message}});
 showHealth();checkSession();checkOwnerActivation();
