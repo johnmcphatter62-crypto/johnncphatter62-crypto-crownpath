@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 from crownpath.database import init_db
-from crownpath.auth import authenticate, create_access_token, create_user, create_owner, decode_access_token, get_user_by_id, owner_exists, public_user
+from crownpath.auth import authenticate, create_access_token, create_user, create_owner, decode_access_token, get_user_by_id, owner_exists, public_user, list_users, set_user_role, set_user_active
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
 from crownpath.startup_guard import validate_startup
@@ -16,7 +16,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 
-app=FastAPI(title="CrownPath",version="1.6.1-github")
+app=FastAPI(title="CrownPath",version="1.7.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -40,6 +40,11 @@ class OwnerActivateRequest(BaseModel):
 class LoginRequest(BaseModel):
     email:EmailStr
     password:str
+class RoleUpdateRequest(BaseModel):
+    role:str
+    active:bool|None=None
+class ActiveUpdateRequest(BaseModel):
+    active:bool
 
 def current_user(request:Request):
     token=request.cookies.get("crownpath_session")
@@ -59,7 +64,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.6.1-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.7.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -99,6 +104,26 @@ def logout(response:Response):
 @app.get("/api/auth/me")
 def me(user=Depends(current_user)):
     data=public_user(user); data["permissions"]=sorted(permissions_for_role(user["role"])); return data
+
+@app.get("/api/owner/users")
+def owner_users(user=Depends(require_permission("staff.manage"))):
+    return {"users":[public_user(item) for item in list_users()]}
+
+@app.patch("/api/owner/users/{user_id}/role")
+def owner_update_role(user_id:str,payload:RoleUpdateRequest,user=Depends(require_permission("staff.manage"))):
+    try:
+        updated=set_user_role(user_id,payload.role,payload.active)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {"user":public_user(updated)}
+
+@app.patch("/api/owner/users/{user_id}/active")
+def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(require_permission("staff.manage"))):
+    try:
+        updated=set_user_active(user_id,payload.active)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {"user":public_user(updated)}
 
 @app.get("/api/avatar/startup/{role}")
 def avatar_startup(role:str):
