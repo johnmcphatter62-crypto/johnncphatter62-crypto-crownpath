@@ -45,6 +45,17 @@ class LearnerProgress(Base):
     completed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
 
+class LearnerLessonStep(Base):
+    __tablename__="learner_lesson_steps"
+    __table_args__=(UniqueConstraint("user_id","lesson_id","step_index",name="uq_learner_lesson_step"),)
+    step_progress_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    user_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False,index=True)
+    step_index: Mapped[int]=mapped_column(Integer,nullable=False)
+    completed: Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
+    completed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
 class AuthToken(Base):
     __tablename__="auth_tokens"
     token_id: Mapped[str]=mapped_column(String(64),primary_key=True)
