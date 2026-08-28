@@ -33,6 +33,18 @@ class InstructorRequest(Base):
     reviewed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc,index=True)
 
+class LearnerProgress(Base):
+    __tablename__="learner_progress"
+    __table_args__=(UniqueConstraint("user_id","lesson_id",name="uq_learner_lesson_progress"),)
+    progress_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    user_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False,index=True)
+    status: Mapped[str]=mapped_column(String(20),nullable=False,default="NOT_STARTED")
+    progress_percent: Mapped[int]=mapped_column(Integer,nullable=False,default=0)
+    opened_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
 class AuthToken(Base):
     __tablename__="auth_tokens"
     token_id: Mapped[str]=mapped_column(String(64),primary_key=True)
