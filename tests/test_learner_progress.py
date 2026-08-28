@@ -22,11 +22,11 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
 
     def setUp(self):
         suffix = uuid.uuid4().hex[:10]
-        self.email = f"learner-{suffix}@example.invalid"
+        self.email = f"learner-{suffix}@example.com"
         self.password = "CrownPath-Learner-2026!"
         self.user = create_user("Learner Test", self.email, self.password, "HOME_CARE")
         response = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.text)
 
     def tearDown(self):
         db = session()
@@ -36,17 +36,18 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
             db.commit()
         finally:
             db.close()
+        self.client.cookies.clear()
 
     def test_dashboard_open_complete_and_saved_progress(self):
         dashboard = self.client.get("/api/learner/dashboard")
-        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.status_code, 200, dashboard.text)
         payload = dashboard.json()
         self.assertEqual(payload["role"], "HOME_CARE")
         self.assertEqual(payload["overall_progress"], 0)
         lesson_id = payload["modules"][0]["lesson_id"]
 
         opened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
-        self.assertEqual(opened.status_code, 200)
+        self.assertEqual(opened.status_code, 200, opened.text)
         self.assertEqual(opened.json()["lesson"]["status"], "IN_PROGRESS")
         self.assertGreaterEqual(opened.json()["lesson"]["progress"], 25)
 
@@ -57,7 +58,7 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertGreater(refreshed["overall_progress"], 0)
 
         completed = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
-        self.assertEqual(completed.status_code, 200)
+        self.assertEqual(completed.status_code, 200, completed.text)
         self.assertEqual(completed.json()["lesson"]["status"], "COMPLETED")
         self.assertEqual(completed.json()["lesson"]["progress"], 100)
 
