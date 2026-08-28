@@ -19,8 +19,9 @@ from crownpath.music_provider import PandoraBusinessAdapter
 from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
+from crownpath.lesson_content import get_lesson_content
 
-app=FastAPI(title="CrownPath",version="1.10.0-github")
+app=FastAPI(title="CrownPath",version="1.11.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -104,7 +105,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.10.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.11.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -173,6 +174,8 @@ def open_lesson(lesson_id:str,user=Depends(require_permission("academy.view"))):
     role=require_learner(user)
     allowed=dict(learner_catalog(role))
     if lesson_id not in allowed: raise HTTPException(404,"Lesson not found for this pathway.")
+    content=get_lesson_content(lesson_id)
+    if not content: raise HTTPException(404,"Lesson content is not available yet.")
     db=session(); now=datetime.now(timezone.utc)
     try:
         item=db.scalar(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"],LearnerProgress.lesson_id==lesson_id))
@@ -182,7 +185,7 @@ def open_lesson(lesson_id:str,user=Depends(require_permission("academy.view"))):
         elif item.status!="COMPLETED":
             item.status="IN_PROGRESS"; item.progress_percent=max(item.progress_percent,25); item.opened_at=item.opened_at or now; item.updated_at=now
         db.commit(); db.refresh(item)
-        return {"lesson":{"lesson_id":lesson_id,"title":allowed[lesson_id],"status":item.status,"progress":item.progress_percent}}
+        return {"lesson":{"lesson_id":lesson_id,"title":allowed[lesson_id],"status":item.status,"progress":item.progress_percent,"content":content}}
     finally: db.close()
 
 @app.post("/api/learner/lessons/{lesson_id}/complete")
