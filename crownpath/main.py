@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
-from crownpath.models import InstructorRequest, User
+from crownpath.models import InstructorRequest, LearnerProgress, User
 from crownpath.auth import authenticate, create_access_token, create_user, create_owner, decode_access_token, get_user_by_id, owner_exists, public_user, list_users, set_user_role, set_user_active
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
@@ -20,7 +20,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 
-app=FastAPI(title="CrownPath",version="1.9.0-github")
+app=FastAPI(title="CrownPath",version="1.10.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -71,12 +71,40 @@ def require_permission(permission:str):
 def request_dict(item:InstructorRequest):
     return {"request_id":item.request_id,"user_id":item.user_id,"statement":item.statement,"status":item.status,"reviewed_by":item.reviewed_by,"review_note":item.review_note,"reviewed_at":item.reviewed_at,"created_at":item.created_at}
 
+def learner_catalog(role:str):
+    catalogs={
+        "HOME_CARE":[
+            ("home-care-foundations","Client Safety & Home Care Foundations"),
+            ("home-care-sanitation","Sanitation & Infection Control"),
+            ("home-care-communication","Professional Communication"),
+            ("home-care-documentation","Care Documentation"),
+        ],
+        "BARBER":[
+            ("barber-foundations","Barbering Foundations"),
+            ("barber-hair-scalp","Hair & Scalp Science"),
+            ("barber-cutting-grooming","Cutting, Fading & Grooming"),
+            ("barber-consultation-safety","Client Consultation & Shop Safety"),
+        ],
+        "COSMETOLOGY_PRO":[
+            ("cosmetology-foundations","Cosmetology Foundations"),
+            ("cosmetology-hair-scalp","Hair & Scalp Science"),
+            ("cosmetology-chemical-safety","Chemical Services & Product Safety"),
+            ("cosmetology-hair-replacement","Hair Replacement & Scalp Application Fundamentals"),
+        ],
+    }
+    return catalogs.get(role,[])
+
+def require_learner(user):
+    role=user["role"].upper()
+    if role in {"OWNER","INSTRUCTOR"}: raise HTTPException(403,"This feature is for learner pathways.")
+    return role
+
 @app.get("/")
 def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.9.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.10.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -119,22 +147,59 @@ def me(user=Depends(current_user)):
 
 @app.get("/api/learner/dashboard")
 def learner_dashboard(user=Depends(require_permission("academy.view"))):
-    role=user["role"].upper()
-    if role in {"OWNER","INSTRUCTOR"}: raise HTTPException(403,"Learner dashboard is for learner pathways.")
+    role=require_learner(user)
     pathway_names={"HOME_CARE":"Home Care","BARBER":"Barber","COSMETOLOGY_PRO":"Cosmetology Pro"}
-    pathway_modules={
-        "HOME_CARE":["Client Safety & Home Care Foundations","Sanitation & Infection Control","Professional Communication","Care Documentation"],
-        "BARBER":["Barbering Foundations","Hair & Scalp Science","Cutting, Fading & Grooming","Client Consultation & Shop Safety"],
-        "COSMETOLOGY_PRO":["Cosmetology Foundations","Hair & Scalp Science","Chemical Services & Product Safety","Hair Replacement & Scalp Application Fundamentals"],
-    }
-    modules=[{"title":title,"status":"READY","progress":0} for title in pathway_modules.get(role,["Professional Foundations"])]
+    catalog=learner_catalog(role)
+    db=session()
+    try:
+        saved={item.lesson_id:item for item in db.scalars(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"])).all()}
+        modules=[]
+        for lesson_id,title in catalog:
+            progress=saved.get(lesson_id)
+            modules.append({"lesson_id":lesson_id,"title":title,"status":progress.status if progress else "NOT_STARTED","progress":progress.progress_percent if progress else 0})
+        overall=round(sum(item["progress"] for item in modules)/len(modules)) if modules else 0
+        next_item=next((item for item in modules if item["status"]!="COMPLETED"),None)
+    finally: db.close()
     digital=[
         {"type":"VIDEO","title":"Orientation & Professional Standards"},
         {"type":"3D_MODEL","title":"Interactive Hair & Scalp Anatomy"} if role!="HOME_CARE" else {"type":"INTERACTIVE","title":"Safe Home Care Environment"},
         {"type":"ANIMATION","title":"Practical Skills Demonstration"},
         {"type":"QUIZ","title":"Pathway Knowledge Check"},
     ]
-    return {"pathway":pathway_names.get(role,role.replace("_"," ").title()),"role":role,"modules":modules,"digital_content":digital,"overall_progress":0,"next_step":modules[0]["title"] if modules else None}
+    return {"pathway":pathway_names.get(role,role.replace("_"," ").title()),"role":role,"modules":modules,"digital_content":digital,"overall_progress":overall,"next_step":next_item["title"] if next_item else "Pathway lessons complete"}
+
+@app.post("/api/learner/lessons/{lesson_id}/open")
+def open_lesson(lesson_id:str,user=Depends(require_permission("academy.view"))):
+    role=require_learner(user)
+    allowed=dict(learner_catalog(role))
+    if lesson_id not in allowed: raise HTTPException(404,"Lesson not found for this pathway.")
+    db=session(); now=datetime.now(timezone.utc)
+    try:
+        item=db.scalar(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"],LearnerProgress.lesson_id==lesson_id))
+        if not item:
+            item=LearnerProgress(progress_id=f"CP-LP-{uuid.uuid4().hex[:12].upper()}",user_id=user["user_id"],lesson_id=lesson_id,status="IN_PROGRESS",progress_percent=25,opened_at=now,updated_at=now)
+            db.add(item)
+        elif item.status!="COMPLETED":
+            item.status="IN_PROGRESS"; item.progress_percent=max(item.progress_percent,25); item.opened_at=item.opened_at or now; item.updated_at=now
+        db.commit(); db.refresh(item)
+        return {"lesson":{"lesson_id":lesson_id,"title":allowed[lesson_id],"status":item.status,"progress":item.progress_percent}}
+    finally: db.close()
+
+@app.post("/api/learner/lessons/{lesson_id}/complete")
+def complete_lesson(lesson_id:str,user=Depends(require_permission("academy.view"))):
+    role=require_learner(user)
+    allowed=dict(learner_catalog(role))
+    if lesson_id not in allowed: raise HTTPException(404,"Lesson not found for this pathway.")
+    db=session(); now=datetime.now(timezone.utc)
+    try:
+        item=db.scalar(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"],LearnerProgress.lesson_id==lesson_id))
+        if not item:
+            item=LearnerProgress(progress_id=f"CP-LP-{uuid.uuid4().hex[:12].upper()}",user_id=user["user_id"],lesson_id=lesson_id,opened_at=now)
+            db.add(item)
+        item.status="COMPLETED"; item.progress_percent=100; item.opened_at=item.opened_at or now; item.completed_at=now; item.updated_at=now
+        db.commit(); db.refresh(item)
+        return {"lesson":{"lesson_id":lesson_id,"title":allowed[lesson_id],"status":item.status,"progress":item.progress_percent}}
+    finally: db.close()
 
 @app.post("/api/instructor-requests")
 def submit_instructor_request(payload:InstructorRequestCreate,user=Depends(current_user)):
@@ -186,22 +251,18 @@ def owner_review_instructor_request(request_id:str,payload:InstructorReviewReque
         item.reviewed_by=user["user_id"]
         item.review_note=(payload.note or "").strip() or None
         item.reviewed_at=datetime.now(timezone.utc)
-        if decision=="APPROVE":
-            applicant.role="INSTRUCTOR"; applicant.track="INSTRUCTOR"; applicant.active=True
+        if decision=="APPROVE": applicant.role="INSTRUCTOR"; applicant.track="INSTRUCTOR"; applicant.active=True
         db.commit(); db.refresh(item)
         return {"request":request_dict(item),"applicant":public_user(get_user_by_id(applicant.user_id))}
     finally: db.close()
 
 @app.get("/api/owner/users")
-def owner_users(user=Depends(require_permission("staff.manage"))):
-    return {"users":[public_user(item) for item in list_users()]}
-
+def owner_users(user=Depends(require_permission("staff.manage"))): return {"users":[public_user(item) for item in list_users()]}
 @app.patch("/api/owner/users/{user_id}/role")
 def owner_update_role(user_id:str,payload:RoleUpdateRequest,user=Depends(require_permission("staff.manage"))):
     try: updated=set_user_role(user_id,payload.role,payload.active)
     except ValueError as exc: raise HTTPException(400,str(exc))
     return {"user":public_user(updated)}
-
 @app.patch("/api/owner/users/{user_id}/active")
 def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(require_permission("staff.manage"))):
     try: updated=set_user_active(user_id,payload.active)
@@ -210,18 +271,12 @@ def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(req
 
 @app.get("/api/avatar/startup/{role}")
 def avatar_startup(role:str):
-    role=role.upper()
-    messages={"OWNER":"Welcome to CrownPath. I can guide you through operations, Academy, security, audio, and launch readiness.","INSTRUCTOR":"Welcome, Instructor. I can guide your teaching, digital content, and classroom tools.","BARBER":"Welcome to your Barber pathway.","COSMETOLOGY_PRO":"Welcome to your Cosmetology pathway.","HOME_CARE":"Welcome to your Home Care pathway."}
+    role=role.upper(); messages={"OWNER":"Welcome to CrownPath. I can guide you through operations, Academy, security, audio, and launch readiness.","INSTRUCTOR":"Welcome, Instructor. I can guide your teaching, digital content, and classroom tools.","BARBER":"Welcome to your Barber pathway.","COSMETOLOGY_PRO":"Welcome to your Cosmetology pathway.","HOME_CARE":"Welcome to your Home Care pathway."}
     return {"role":role,"message":messages.get(role,"Welcome to CrownPath."),"guide_enabled":True}
-
 @app.get("/api/academy")
-def academy(user=Depends(require_permission("academy.view"))):
-    return {"modules":[{"title":"Professional Foundations","status":"READY"},{"title":"Hair & Scalp Science","status":"READY"},{"title":"Digital Learning Lab","status":"READY"},{"title":"Business & Client Experience","status":"READY"}]}
-
+def academy(user=Depends(require_permission("academy.view"))): return {"modules":[{"title":"Professional Foundations","status":"READY"},{"title":"Hair & Scalp Science","status":"READY"},{"title":"Digital Learning Lab","status":"READY"},{"title":"Business & Client Experience","status":"READY"}]}
 @app.get("/api/digital-content")
-def digital_content(user=Depends(require_permission("digital.view"))):
-    return {"assets":[{"type":"VIDEO","title":"Hair & Scalp Foundations"},{"type":"3D_MODEL","title":"Interactive Hair Follicle"},{"type":"ANIMATION","title":"Sectioning Demonstration"},{"type":"QUIZ","title":"Knowledge Check"}]}
-
+def digital_content(user=Depends(require_permission("digital.view"))): return {"assets":[{"type":"VIDEO","title":"Hair & Scalp Foundations"},{"type":"3D_MODEL","title":"Interactive Hair Follicle"},{"type":"ANIMATION","title":"Sectioning Demonstration"},{"type":"QUIZ","title":"Knowledge Check"}]}
 @app.get("/api/audio/stations")
 def stations(): return {"stations":list_audio_stations(),"notice":"Production playback requires an authorized business music source."}
 @app.get("/api/audio/zones")
@@ -235,7 +290,6 @@ def playback(zone_id:str):
     return state
 @app.get("/api/audio/provider")
 def audio_provider(): return PandoraBusinessAdapter().status()
-
 @app.get("/api/production/readiness")
 def readiness(user=Depends(require_permission("security.manage"))): return production_readiness()
 @app.get("/api/release/checks")
