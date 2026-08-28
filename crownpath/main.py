@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
-from crownpath.models import InstructorRequest, LearnerProgress, User
+from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
 from crownpath.auth import authenticate, create_access_token, create_user, create_owner, decode_access_token, get_user_by_id, owner_exists, public_user, list_users, set_user_role, set_user_active
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
@@ -21,7 +21,7 @@ from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
 
-app=FastAPI(title="CrownPath",version="1.11.0-github")
+app=FastAPI(title="CrownPath",version="1.12.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -100,12 +100,37 @@ def require_learner(user):
     if role in {"OWNER","INSTRUCTOR"}: raise HTTPException(403,"This feature is for learner pathways.")
     return role
 
+def lesson_for_role(role:str,lesson_id:str):
+    allowed=dict(learner_catalog(role))
+    if lesson_id not in allowed: raise HTTPException(404,"Lesson not found for this pathway.")
+    content=get_lesson_content(lesson_id)
+    if not content: raise HTTPException(404,"Lesson content is not available yet.")
+    return allowed[lesson_id],content
+
+def completed_step_indexes(db,user_id:str,lesson_id:str):
+    rows=db.scalars(select(LearnerLessonStep).where(LearnerLessonStep.user_id==user_id,LearnerLessonStep.lesson_id==lesson_id,LearnerLessonStep.completed==True)).all()
+    return sorted({row.step_index for row in rows})
+
+def sync_lesson_progress(db,user_id:str,lesson_id:str,total_steps:int,now:datetime):
+    item=db.scalar(select(LearnerProgress).where(LearnerProgress.user_id==user_id,LearnerProgress.lesson_id==lesson_id))
+    indexes=completed_step_indexes(db,user_id,lesson_id)
+    completed_count=len(indexes)
+    progress=round(completed_count/total_steps*100) if total_steps else 0
+    if not item:
+        item=LearnerProgress(progress_id=f"CP-LP-{uuid.uuid4().hex[:12].upper()}",user_id=user_id,lesson_id=lesson_id,status="IN_PROGRESS",progress_percent=progress,opened_at=now,updated_at=now)
+        db.add(item)
+    elif item.status!="COMPLETED":
+        item.status="IN_PROGRESS"; item.progress_percent=progress; item.opened_at=item.opened_at or now; item.updated_at=now
+    if total_steps and completed_count>=total_steps:
+        item.status="COMPLETED"; item.progress_percent=100; item.completed_at=item.completed_at or now; item.updated_at=now
+    return item,indexes
+
 @app.get("/")
 def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.11.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.12.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -172,36 +197,49 @@ def learner_dashboard(user=Depends(require_permission("academy.view"))):
 @app.post("/api/learner/lessons/{lesson_id}/open")
 def open_lesson(lesson_id:str,user=Depends(require_permission("academy.view"))):
     role=require_learner(user)
-    allowed=dict(learner_catalog(role))
-    if lesson_id not in allowed: raise HTTPException(404,"Lesson not found for this pathway.")
-    content=get_lesson_content(lesson_id)
-    if not content: raise HTTPException(404,"Lesson content is not available yet.")
+    title,content=lesson_for_role(role,lesson_id)
+    total_steps=len(content.get("steps",[]))
     db=session(); now=datetime.now(timezone.utc)
     try:
-        item=db.scalar(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"],LearnerProgress.lesson_id==lesson_id))
-        if not item:
-            item=LearnerProgress(progress_id=f"CP-LP-{uuid.uuid4().hex[:12].upper()}",user_id=user["user_id"],lesson_id=lesson_id,status="IN_PROGRESS",progress_percent=25,opened_at=now,updated_at=now)
-            db.add(item)
-        elif item.status!="COMPLETED":
-            item.status="IN_PROGRESS"; item.progress_percent=max(item.progress_percent,25); item.opened_at=item.opened_at or now; item.updated_at=now
+        item,indexes=sync_lesson_progress(db,user["user_id"],lesson_id,total_steps,now)
         db.commit(); db.refresh(item)
-        return {"lesson":{"lesson_id":lesson_id,"title":allowed[lesson_id],"status":item.status,"progress":item.progress_percent,"content":content}}
+        return {"lesson":{"lesson_id":lesson_id,"title":title,"status":item.status,"progress":item.progress_percent,"content":content,"completed_steps":indexes,"total_steps":total_steps}}
+    finally: db.close()
+
+@app.post("/api/learner/lessons/{lesson_id}/steps/{step_index}/complete")
+def complete_lesson_step(lesson_id:str,step_index:int,user=Depends(require_permission("academy.view"))):
+    role=require_learner(user)
+    title,content=lesson_for_role(role,lesson_id)
+    total_steps=len(content.get("steps",[]))
+    if step_index<1 or step_index>total_steps: raise HTTPException(404,"Lesson step not found.")
+    db=session(); now=datetime.now(timezone.utc)
+    try:
+        step=db.scalar(select(LearnerLessonStep).where(LearnerLessonStep.user_id==user["user_id"],LearnerLessonStep.lesson_id==lesson_id,LearnerLessonStep.step_index==step_index))
+        if not step:
+            step=LearnerLessonStep(step_progress_id=f"CP-LS-{uuid.uuid4().hex[:12].upper()}",user_id=user["user_id"],lesson_id=lesson_id,step_index=step_index,completed=True,completed_at=now,updated_at=now)
+            db.add(step); db.flush()
+        elif not step.completed:
+            step.completed=True; step.completed_at=now; step.updated_at=now; db.flush()
+        item,indexes=sync_lesson_progress(db,user["user_id"],lesson_id,total_steps,now)
+        db.commit(); db.refresh(item)
+        return {"lesson":{"lesson_id":lesson_id,"title":title,"status":item.status,"progress":item.progress_percent,"completed_steps":indexes,"completed_step_count":len(indexes),"total_steps":total_steps}}
     finally: db.close()
 
 @app.post("/api/learner/lessons/{lesson_id}/complete")
 def complete_lesson(lesson_id:str,user=Depends(require_permission("academy.view"))):
     role=require_learner(user)
-    allowed=dict(learner_catalog(role))
-    if lesson_id not in allowed: raise HTTPException(404,"Lesson not found for this pathway.")
+    title,content=lesson_for_role(role,lesson_id)
+    total_steps=len(content.get("steps",[]))
     db=session(); now=datetime.now(timezone.utc)
     try:
-        item=db.scalar(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"],LearnerProgress.lesson_id==lesson_id))
-        if not item:
-            item=LearnerProgress(progress_id=f"CP-LP-{uuid.uuid4().hex[:12].upper()}",user_id=user["user_id"],lesson_id=lesson_id,opened_at=now)
-            db.add(item)
-        item.status="COMPLETED"; item.progress_percent=100; item.opened_at=item.opened_at or now; item.completed_at=now; item.updated_at=now
+        existing=set(completed_step_indexes(db,user["user_id"],lesson_id))
+        for index in range(1,total_steps+1):
+            if index not in existing:
+                db.add(LearnerLessonStep(step_progress_id=f"CP-LS-{uuid.uuid4().hex[:12].upper()}",user_id=user["user_id"],lesson_id=lesson_id,step_index=index,completed=True,completed_at=now,updated_at=now))
+        db.flush()
+        item,indexes=sync_lesson_progress(db,user["user_id"],lesson_id,total_steps,now)
         db.commit(); db.refresh(item)
-        return {"lesson":{"lesson_id":lesson_id,"title":allowed[lesson_id],"status":item.status,"progress":item.progress_percent}}
+        return {"lesson":{"lesson_id":lesson_id,"title":title,"status":item.status,"progress":item.progress_percent,"completed_steps":indexes,"total_steps":total_steps}}
     finally: db.close()
 
 @app.post("/api/instructor-requests")
