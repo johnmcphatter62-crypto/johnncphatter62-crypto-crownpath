@@ -20,7 +20,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 
-app=FastAPI(title="CrownPath",version="1.8.0-github")
+app=FastAPI(title="CrownPath",version="1.9.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -76,7 +76,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.8.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.9.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -116,6 +116,25 @@ def logout(response:Response):
 @app.get("/api/auth/me")
 def me(user=Depends(current_user)):
     data=public_user(user); data["permissions"]=sorted(permissions_for_role(user["role"])); return data
+
+@app.get("/api/learner/dashboard")
+def learner_dashboard(user=Depends(require_permission("academy.view"))):
+    role=user["role"].upper()
+    if role in {"OWNER","INSTRUCTOR"}: raise HTTPException(403,"Learner dashboard is for learner pathways.")
+    pathway_names={"HOME_CARE":"Home Care","BARBER":"Barber","COSMETOLOGY_PRO":"Cosmetology Pro"}
+    pathway_modules={
+        "HOME_CARE":["Client Safety & Home Care Foundations","Sanitation & Infection Control","Professional Communication","Care Documentation"],
+        "BARBER":["Barbering Foundations","Hair & Scalp Science","Cutting, Fading & Grooming","Client Consultation & Shop Safety"],
+        "COSMETOLOGY_PRO":["Cosmetology Foundations","Hair & Scalp Science","Chemical Services & Product Safety","Hair Replacement & Scalp Application Fundamentals"],
+    }
+    modules=[{"title":title,"status":"READY","progress":0} for title in pathway_modules.get(role,["Professional Foundations"])]
+    digital=[
+        {"type":"VIDEO","title":"Orientation & Professional Standards"},
+        {"type":"3D_MODEL","title":"Interactive Hair & Scalp Anatomy"} if role!="HOME_CARE" else {"type":"INTERACTIVE","title":"Safe Home Care Environment"},
+        {"type":"ANIMATION","title":"Practical Skills Demonstration"},
+        {"type":"QUIZ","title":"Pathway Knowledge Check"},
+    ]
+    return {"pathway":pathway_names.get(role,role.replace("_"," ").title()),"role":role,"modules":modules,"digital_content":digital,"overall_progress":0,"next_step":modules[0]["title"] if modules else None}
 
 @app.post("/api/instructor-requests")
 def submit_instructor_request(payload:InstructorRequestCreate,user=Depends(current_user)):
