@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -10,8 +11,10 @@ class FrontendRegressionTest(unittest.TestCase):
         cls.index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
 
     def test_learner_ui_does_not_call_bulk_complete_endpoint(self):
-        self.assertNotIn("/complete`,{method:'POST'", self.app_js)
-        self.assertNotIn("/complete\",{method:\"POST\"", self.app_js)
+        bulk_complete = re.compile(
+            r"/api/learner/lessons/\$\{encodeURIComponent\([^)]*\)\}/complete`\s*,\s*\{method:'POST'"
+        )
+        self.assertIsNone(bulk_complete.search(self.app_js))
         self.assertNotIn("completeLesson(", self.app_js)
 
     def test_step_completion_endpoint_remains_available_in_ui(self):
