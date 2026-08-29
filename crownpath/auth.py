@@ -358,6 +358,8 @@ def authenticate(email: str, password: str):
     if not verify_password(password, user["password_hash"]):
         _set_login_failure(user)
         return None, "INVALID"
+    if user["mfa_enabled"]:
+        return get_user_by_id(user["user_id"]), "OK"
     _clear_login_failures(user["user_id"])
     return get_user_by_id(user["user_id"]), "OK"
 
@@ -427,11 +429,18 @@ def consume_mfa_recovery_code(user_id: str, code: str) -> bool:
 
 def verify_mfa_code(user_id: str, code: str) -> bool:
     user = get_user_by_id(user_id)
-    secret = user.get("mfa_secret") if user else None
+    if not user or _is_locked(user):
+        return False
+    secret = user.get("mfa_secret")
     normalized = code.strip()
-    if secret and pyotp.TOTP(secret).verify(normalized, valid_window=1):
+    valid = bool(secret and pyotp.TOTP(secret).verify(normalized, valid_window=1))
+    if not valid:
+        valid = consume_mfa_recovery_code(user_id, normalized)
+    if valid:
+        _clear_login_failures(user_id)
         return True
-    return consume_mfa_recovery_code(user_id, normalized)
+    _set_login_failure(user)
+    return False
 
 
 def enable_mfa(user_id: str, code: str):
