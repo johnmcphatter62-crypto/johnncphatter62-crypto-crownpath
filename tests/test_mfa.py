@@ -10,7 +10,7 @@ os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-mfa-tests-
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from crownpath.auth import consume_mfa_recovery_code, create_user, generate_mfa_recovery_codes
+from crownpath.auth import create_user
 from crownpath.database import init_db, session
 from crownpath.main import app
 from crownpath.models import AuthToken, User
@@ -54,8 +54,13 @@ class MfaIntegrationTest(unittest.TestCase):
         code = pyotp.TOTP(secret).now()
         enabled = self.client.post("/api/auth/mfa/enable", json={"code": code})
         self.assertEqual(enabled.status_code, 200, enabled.text)
-        self.assertTrue(enabled.json()["mfa_enabled"])
-        return secret
+        payload = enabled.json()
+        self.assertTrue(payload["mfa_enabled"])
+        recovery_codes = payload.get("recovery_codes") or []
+        self.assertEqual(len(recovery_codes), 8)
+        self.assertEqual(len(set(recovery_codes)), 8)
+        self.assertTrue(all(len(item) == 8 and item.isdigit() for item in recovery_codes))
+        return secret, recovery_codes
 
     def test_mfa_setup_requires_authentication(self):
         response = self.client.post("/api/auth/mfa/setup")
@@ -75,7 +80,7 @@ class MfaIntegrationTest(unittest.TestCase):
             db.close()
 
     def test_enabled_mfa_requires_challenge_and_valid_code(self):
-        secret = self.enable_mfa()
+        secret, _ = self.enable_mfa()
         self.client.cookies.clear()
         login = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
         self.assertEqual(login.status_code, 200, login.text)
@@ -106,22 +111,30 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/verify", json={"challenge": "x" * 32, "code": "123456"})
         self.assertEqual(response.status_code, 401, response.text)
 
-    def test_recovery_code_is_one_time_and_hashed(self):
-        codes = generate_mfa_recovery_codes(self.user["user_id"])
-        self.assertEqual(len(codes), 8)
-        self.assertEqual(len(set(codes)), 8)
-        self.assertTrue(all(len(code) == 8 and code.isdigit() for code in codes))
+    def test_recovery_code_is_one_time_use_through_login(self):
+        _, recovery_codes = self.enable_mfa()
+        recovery_code = recovery_codes[0]
         db = session()
         try:
             rows = db.query(AuthToken).filter(AuthToken.user_id == self.user["user_id"], AuthToken.token_type == "MFA_RECOVERY").all()
             self.assertEqual(len(rows), 8)
             stored_hashes = {row.token_hash for row in rows}
-            self.assertFalse(any(code in stored_hashes for code in codes))
+            self.assertFalse(any(code in stored_hashes for code in recovery_codes))
         finally:
             db.close()
-        recovery = codes[0]
-        self.assertTrue(consume_mfa_recovery_code(self.user["user_id"], recovery))
-        self.assertFalse(consume_mfa_recovery_code(self.user["user_id"], recovery))
+
+        self.client.cookies.clear()
+        first_login = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(first_login.status_code, 200, first_login.text)
+        first = self.client.post("/api/auth/mfa/verify", json={"challenge": first_login.json()["challenge"], "code": recovery_code})
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertTrue(first.json()["authenticated"])
+
+        self.client.cookies.clear()
+        second_login = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(second_login.status_code, 200, second_login.text)
+        second = self.client.post("/api/auth/mfa/verify", json={"challenge": second_login.json()["challenge"], "code": recovery_code})
+        self.assertEqual(second.status_code, 401, second.text)
 
 
 if __name__ == "__main__":
