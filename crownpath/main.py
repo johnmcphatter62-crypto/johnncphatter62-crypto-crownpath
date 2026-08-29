@@ -9,7 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
 from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
-from crownpath.auth import authenticate, create_access_token, create_user, create_owner, decode_access_token, get_user_by_id, owner_exists, public_user, list_users, set_user_role, set_user_active
+from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
 from crownpath.startup_guard import validate_startup
@@ -21,7 +21,7 @@ from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
 
-app=FastAPI(title="CrownPath",version="1.12.0-github")
+app=FastAPI(title="CrownPath",version="1.13.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -45,6 +45,11 @@ class OwnerActivateRequest(BaseModel):
 class LoginRequest(BaseModel):
     email:EmailStr
     password:str
+class MfaVerifyRequest(BaseModel):
+    challenge:str=Field(min_length=20,max_length=4096)
+    code:str=Field(min_length=6,max_length=8)
+class MfaEnableRequest(BaseModel):
+    code:str=Field(min_length=6,max_length=8)
 class RoleUpdateRequest(BaseModel):
     role:str
     active:bool|None=None
@@ -130,7 +135,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.12.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.13.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -158,10 +163,34 @@ def login(payload:LoginRequest,response:Response):
     user,status=authenticate(str(payload.email),payload.password)
     if status=="LOCKED": raise HTTPException(423,"Account temporarily locked.")
     if not user: raise HTTPException(401,"Invalid sign-in.")
-    if user["mfa_enabled"]: return {"authenticated":False,"mfa_required":True,"user_id":user["user_id"]}
+    if user["mfa_enabled"]:
+        return {"authenticated":False,"mfa_required":True,"challenge":create_mfa_challenge(user["user_id"])}
     token=create_access_token(user["user_id"])
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(user)}
+
+@app.post("/api/auth/mfa/verify")
+def mfa_verify(payload:MfaVerifyRequest,response:Response):
+    user_id=decode_mfa_challenge(payload.challenge)
+    user=get_user_by_id(user_id) if user_id else None
+    if not user or not user["active"] or not user["mfa_enabled"]: raise HTTPException(401,"MFA challenge is invalid or expired.")
+    if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator code.")
+    token=create_access_token(user_id)
+    response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
+    return {"authenticated":True,"user":public_user(get_user_by_id(user_id))}
+
+@app.post("/api/auth/mfa/setup")
+def mfa_setup(user=Depends(current_user)):
+    if user["mfa_enabled"]: raise HTTPException(409,"Multi-factor authentication is already enabled.")
+    secret=start_mfa_setup(user["user_id"])
+    uri=mfa_provisioning_uri(user["user_id"],user["email"])
+    return {"secret":secret,"provisioning_uri":uri,"message":"Add this account to your authenticator app, then enter the current 6-digit code to confirm."}
+
+@app.post("/api/auth/mfa/enable")
+def mfa_enable(payload:MfaEnableRequest,user=Depends(current_user)):
+    if user["mfa_enabled"]: raise HTTPException(409,"Multi-factor authentication is already enabled.")
+    if not enable_mfa(user["user_id"],payload.code.strip()): raise HTTPException(400,"Authenticator code could not be verified.")
+    return {"mfa_enabled":True,"user":public_user(get_user_by_id(user["user_id"]))}
 
 @app.post("/api/auth/logout")
 def logout(response:Response):
