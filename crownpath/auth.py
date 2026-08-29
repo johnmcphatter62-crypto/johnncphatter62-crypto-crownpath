@@ -9,7 +9,7 @@ import jwt
 import pyotp
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from crownpath.database import session
@@ -20,6 +20,8 @@ password_hash = PasswordHash.recommended()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 30
 MFA_CHALLENGE_MINUTES = 5
+MFA_RECOVERY_CODE_COUNT = 8
+MFA_RECOVERY_DAYS = 3650
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
@@ -383,25 +385,70 @@ def mfa_provisioning_uri(user_id: str, account_name: str):
     return pyotp.TOTP(secret).provisioning_uri(name=account_name, issuer_name="CrownPath")
 
 
-def verify_mfa_code(user_id: str, code: str) -> bool:
-    user = get_user_by_id(user_id)
-    secret = user.get("mfa_secret") if user else None
-    return bool(secret and pyotp.TOTP(secret).verify(code, valid_window=1))
-
-
-def enable_mfa(user_id: str, code: str) -> bool:
-    if not verify_mfa_code(user_id, code):
-        return False
+def generate_mfa_recovery_codes(user_id: str, count: int = MFA_RECOVERY_CODE_COUNT):
+    codes = [f"{secrets.randbelow(100_000_000):08d}" for _ in range(count)]
     db = session()
     try:
-        user = db.get(User, user_id)
-        if not user:
+        db.execute(delete(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "MFA_RECOVERY"))
+        expires_at = now_utc() + timedelta(days=MFA_RECOVERY_DAYS)
+        for code in codes:
+            db.add(AuthToken(
+                token_id=f"CP-TOK-{uuid.uuid4().hex[:12].upper()}",
+                user_id=user_id,
+                token_hash=_hash_one_time_token(code),
+                token_type="MFA_RECOVERY",
+                expires_at=expires_at,
+                created_at=now_utc(),
+            ))
+        db.commit()
+    finally:
+        db.close()
+    return codes
+
+
+def consume_mfa_recovery_code(user_id: str, code: str) -> bool:
+    token_hash = _hash_one_time_token(code.strip())
+    db = session()
+    try:
+        token = db.scalar(select(AuthToken).where(
+            AuthToken.user_id == user_id,
+            AuthToken.token_hash == token_hash,
+            AuthToken.token_type == "MFA_RECOVERY",
+            AuthToken.used_at.is_(None),
+        ))
+        if not token or token.expires_at < now_utc():
             return False
-        user.mfa_enabled = True
+        token.used_at = now_utc()
         db.commit()
         return True
     finally:
         db.close()
+
+
+def verify_mfa_code(user_id: str, code: str) -> bool:
+    user = get_user_by_id(user_id)
+    secret = user.get("mfa_secret") if user else None
+    normalized = code.strip()
+    if secret and pyotp.TOTP(secret).verify(normalized, valid_window=1):
+        return True
+    return consume_mfa_recovery_code(user_id, normalized)
+
+
+def enable_mfa(user_id: str, code: str):
+    user = get_user_by_id(user_id)
+    secret = user.get("mfa_secret") if user else None
+    if not secret or not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
+        return None
+    db = session()
+    try:
+        row = db.get(User, user_id)
+        if not row:
+            return None
+        row.mfa_enabled = True
+        db.commit()
+    finally:
+        db.close()
+    return generate_mfa_recovery_codes(user_id)
 
 
 def mark_email_verified(user_id: str):
