@@ -21,7 +21,7 @@ from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
 
-app=FastAPI(title="CrownPath",version="1.13.0-github")
+app=FastAPI(title="CrownPath",version="1.14.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -135,7 +135,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.13.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.14.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -174,7 +174,7 @@ def mfa_verify(payload:MfaVerifyRequest,response:Response):
     user_id=decode_mfa_challenge(payload.challenge)
     user=get_user_by_id(user_id) if user_id else None
     if not user or not user["active"] or not user["mfa_enabled"]: raise HTTPException(401,"MFA challenge is invalid or expired.")
-    if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator code.")
+    if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator or recovery code.")
     token=create_access_token(user_id)
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(get_user_by_id(user_id))}
@@ -189,8 +189,9 @@ def mfa_setup(user=Depends(current_user)):
 @app.post("/api/auth/mfa/enable")
 def mfa_enable(payload:MfaEnableRequest,user=Depends(current_user)):
     if user["mfa_enabled"]: raise HTTPException(409,"Multi-factor authentication is already enabled.")
-    if not enable_mfa(user["user_id"],payload.code.strip()): raise HTTPException(400,"Authenticator code could not be verified.")
-    return {"mfa_enabled":True,"user":public_user(get_user_by_id(user["user_id"]))}
+    recovery_codes=enable_mfa(user["user_id"],payload.code.strip())
+    if not recovery_codes: raise HTTPException(400,"Authenticator code could not be verified.")
+    return {"mfa_enabled":True,"recovery_codes":recovery_codes,"user":public_user(get_user_by_id(user["user_id"]))}
 
 @app.post("/api/auth/logout")
 def logout(response:Response):
