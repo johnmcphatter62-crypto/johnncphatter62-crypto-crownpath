@@ -136,6 +136,29 @@ class MfaIntegrationTest(unittest.TestCase):
         second = self.client.post("/api/auth/mfa/verify", json={"challenge": second_login.json()["challenge"], "code": recovery_code})
         self.assertEqual(second.status_code, 401, second.text)
 
+    def test_repeated_invalid_mfa_codes_lock_account(self):
+        self.enable_mfa()
+        self.client.cookies.clear()
+        login = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(login.status_code, 200, login.text)
+        challenge = login.json()["challenge"]
+
+        for attempt in range(1, 6):
+            failed = self.client.post("/api/auth/mfa/verify", json={"challenge": challenge, "code": "000000"})
+            expected_status = 423 if attempt == 5 else 401
+            self.assertEqual(failed.status_code, expected_status, failed.text)
+
+        db = session()
+        try:
+            row = db.get(User, self.user["user_id"])
+            self.assertEqual(row.failed_login_attempts, 0)
+            self.assertIsNotNone(row.locked_until)
+        finally:
+            db.close()
+
+        locked_login = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(locked_login.status_code, 423, locked_login.text)
+
 
 if __name__ == "__main__":
     unittest.main()
