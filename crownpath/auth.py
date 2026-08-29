@@ -19,6 +19,7 @@ password_hash = PasswordHash.recommended()
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 30
+MFA_CHALLENGE_MINUTES = 5
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
@@ -68,6 +69,7 @@ def create_access_token(user_id: str) -> str:
     now = now_utc()
     payload = {
         "sub": user_id,
+        "purpose": "session",
         "iat": now,
         "exp": now + timedelta(minutes=ACCESS_TOKEN_MINUTES),
     }
@@ -77,6 +79,30 @@ def create_access_token(user_id: str) -> str:
 def decode_access_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") not in {None, "session"}:
+            return None
+        return payload.get("sub")
+    except InvalidTokenError:
+        return None
+
+
+def create_mfa_challenge(user_id: str) -> str:
+    now = now_utc()
+    payload = {
+        "sub": user_id,
+        "purpose": "mfa_challenge",
+        "iat": now,
+        "exp": now + timedelta(minutes=MFA_CHALLENGE_MINUTES),
+        "jti": secrets.token_urlsafe(12),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_mfa_challenge(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") != "mfa_challenge":
+            return None
         return payload.get("sub")
     except InvalidTokenError:
         return None
@@ -347,6 +373,14 @@ def start_mfa_setup(user_id: str):
     finally:
         db.close()
     return secret
+
+
+def mfa_provisioning_uri(user_id: str, account_name: str):
+    user = get_user_by_id(user_id)
+    secret = user.get("mfa_secret") if user else None
+    if not secret:
+        return None
+    return pyotp.TOTP(secret).provisioning_uri(name=account_name, issuer_name="CrownPath")
 
 
 def verify_mfa_code(user_id: str, code: str) -> bool:
