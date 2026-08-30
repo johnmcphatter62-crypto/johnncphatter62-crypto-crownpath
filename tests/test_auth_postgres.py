@@ -18,9 +18,10 @@ from crownpath.auth import (
     create_user,
     decode_access_token,
     get_user_by_email,
+    revoke_access_token,
 )
 from crownpath.database import init_db, session
-from crownpath.models import User
+from crownpath.models import AuthToken, User
 
 
 class PostgresAuthIntegrationTest(unittest.TestCase):
@@ -50,6 +51,7 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
 
         db = session()
         try:
+            db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
             db.execute(delete(User).where(User.user_id == created["user_id"]))
             db.commit()
         finally:
@@ -85,6 +87,26 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             algorithm=ALGORITHM,
         )
         self.assertIsNone(decode_access_token(challenge))
+
+    def test_revoked_session_token_cannot_be_reused(self):
+        suffix = uuid.uuid4().hex[:10]
+        email = f"crownpath-session-{suffix}@example.invalid"
+        password = "CrownPath-Session-Test-2026!"
+        created = create_user("CrownPath Session", email, password, "HOME_CARE")
+        token = create_access_token(created["user_id"])
+
+        self.assertEqual(decode_access_token(token), created["user_id"])
+        self.assertTrue(revoke_access_token(token))
+        self.assertIsNone(decode_access_token(token))
+        self.assertFalse(revoke_access_token(token))
+
+        db = session()
+        try:
+            db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+            db.execute(delete(User).where(User.user_id == created["user_id"]))
+            db.commit()
+        finally:
+            db.close()
 
 
 if __name__ == "__main__":
