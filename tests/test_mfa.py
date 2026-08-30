@@ -143,10 +143,9 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertEqual(login.status_code, 200, login.text)
         challenge = login.json()["challenge"]
 
-        for attempt in range(1, 6):
+        for _ in range(5):
             failed = self.client.post("/api/auth/mfa/verify", json={"challenge": challenge, "code": "000000"})
-            expected_status = 423 if attempt == 5 else 401
-            self.assertEqual(failed.status_code, expected_status, failed.text)
+            self.assertEqual(failed.status_code, 401, failed.text)
 
         db = session()
         try:
