@@ -67,15 +67,51 @@ def verify_password(password: str, hashed: str) -> bool:
     return password_hash.verify(password, hashed)
 
 
+def _hash_session_id(session_id: str) -> str:
+    message = f"session:{session_id}".encode("utf-8")
+    return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
 def create_access_token(user_id: str) -> str:
     now = now_utc()
+    expires_at = now + timedelta(minutes=ACCESS_TOKEN_MINUTES)
+    session_id = secrets.token_urlsafe(24)
     payload = {
         "sub": user_id,
         "purpose": "session",
         "iat": now,
-        "exp": now + timedelta(minutes=ACCESS_TOKEN_MINUTES),
+        "exp": expires_at,
+        "jti": session_id,
     }
+    db = session()
+    try:
+        db.add(AuthToken(
+            token_id=f"CP-TOK-{uuid.uuid4().hex[:12].upper()}",
+            user_id=user_id,
+            token_hash=_hash_session_id(session_id),
+            token_type="SESSION",
+            expires_at=expires_at,
+            created_at=now,
+        ))
+        db.commit()
+    finally:
+        db.close()
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _active_session(user_id: str, session_id: str) -> bool:
+    token_hash = _hash_session_id(session_id)
+    db = session()
+    try:
+        token = db.scalar(select(AuthToken).where(
+            AuthToken.user_id == user_id,
+            AuthToken.token_hash == token_hash,
+            AuthToken.token_type == "SESSION",
+            AuthToken.used_at.is_(None),
+        ))
+        return bool(token and token.expires_at >= now_utc())
+    finally:
+        db.close()
 
 
 def decode_access_token(token: str):
@@ -83,9 +119,42 @@ def decode_access_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("purpose") not in {None, "session"}:
             return None
-        return payload.get("sub")
+        user_id = payload.get("sub")
+        session_id = payload.get("jti")
+        if session_id and not _active_session(user_id, session_id):
+            return None
+        return user_id
     except InvalidTokenError:
         return None
+
+
+def revoke_access_token(token: str) -> bool:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") not in {None, "session"}:
+            return False
+        user_id = payload.get("sub")
+        session_id = payload.get("jti")
+        if not user_id or not session_id:
+            return False
+    except InvalidTokenError:
+        return False
+    db = session()
+    try:
+        result = db.execute(
+            update(AuthToken)
+            .where(
+                AuthToken.user_id == user_id,
+                AuthToken.token_hash == _hash_session_id(session_id),
+                AuthToken.token_type == "SESSION",
+                AuthToken.used_at.is_(None),
+            )
+            .values(used_at=now_utc())
+        )
+        db.commit()
+        return result.rowcount == 1
+    finally:
+        db.close()
 
 
 def create_mfa_challenge(user_id: str) -> str:
