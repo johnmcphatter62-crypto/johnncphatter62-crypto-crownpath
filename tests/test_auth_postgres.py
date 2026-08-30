@@ -1,6 +1,9 @@
 import os
 import unittest
 import uuid
+from datetime import datetime, timedelta, timezone
+
+import jwt
 
 os.environ.setdefault("CROWNPATH_ENV", "staging")
 os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-auth-tests-123456789")
@@ -8,6 +11,8 @@ os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-auth-tests
 from sqlalchemy import delete
 
 from crownpath.auth import (
+    ALGORITHM,
+    SECRET_KEY,
     authenticate,
     create_access_token,
     create_user,
@@ -51,6 +56,35 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             db.close()
 
         self.assertIsNone(get_user_by_email(email))
+
+    def test_expired_session_token_is_rejected(self):
+        now = datetime.now(timezone.utc)
+        expired = jwt.encode(
+            {
+                "sub": "CP-USR-EXPIRED",
+                "purpose": "session",
+                "iat": now - timedelta(minutes=31),
+                "exp": now - timedelta(seconds=1),
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        self.assertIsNone(decode_access_token(expired))
+
+    def test_mfa_challenge_token_cannot_be_used_as_session(self):
+        now = datetime.now(timezone.utc)
+        challenge = jwt.encode(
+            {
+                "sub": "CP-USR-CHALLENGE",
+                "purpose": "mfa_challenge",
+                "iat": now,
+                "exp": now + timedelta(minutes=5),
+                "jti": uuid.uuid4().hex,
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        self.assertIsNone(decode_access_token(challenge))
 
 
 if __name__ == "__main__":
