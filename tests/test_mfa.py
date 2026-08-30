@@ -11,7 +11,7 @@ os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-mfa-tests-
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from crownpath.auth import _hash_mfa_recovery_code, create_user
+from crownpath.auth import _hash_mfa_recovery_code, consume_mfa_recovery_code, create_user
 from crownpath.database import init_db, session
 from crownpath.main import app
 from crownpath.models import AuthToken, User
@@ -120,6 +120,25 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertNotEqual(first, plain_sha256)
         self.assertNotEqual(first, second)
         self.assertEqual(len(first), 64)
+
+    def test_atomic_recovery_code_consumption_allows_only_one_success(self):
+        _, recovery_codes = self.enable_mfa()
+        recovery_code = recovery_codes[0]
+        first = consume_mfa_recovery_code(self.user["user_id"], recovery_code)
+        second = consume_mfa_recovery_code(self.user["user_id"], recovery_code)
+        self.assertTrue(first)
+        self.assertFalse(second)
+
+        db = session()
+        try:
+            token = db.query(AuthToken).filter(
+                AuthToken.user_id == self.user["user_id"],
+                AuthToken.token_hash == _hash_mfa_recovery_code(self.user["user_id"], recovery_code),
+                AuthToken.token_type == "MFA_RECOVERY",
+            ).one()
+            self.assertIsNotNone(token.used_at)
+        finally:
+            db.close()
 
     def test_recovery_code_is_one_time_use_through_login(self):
         _, recovery_codes = self.enable_mfa()
