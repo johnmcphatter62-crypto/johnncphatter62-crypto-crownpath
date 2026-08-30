@@ -11,7 +11,7 @@ from sqlalchemy import delete
 from crownpath.auth import create_user, set_user_role
 from crownpath.database import init_db, session
 from crownpath.main import app
-from crownpath.models import LearnerLessonStep, LearnerProgress, User
+from crownpath.models import AuthToken, LearnerLessonStep, LearnerProgress, User
 
 
 class LearnerProgressIntegrationTest(unittest.TestCase):
@@ -33,6 +33,7 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         try:
             db.execute(delete(LearnerLessonStep).where(LearnerLessonStep.user_id == self.user["user_id"]))
             db.execute(delete(LearnerProgress).where(LearnerProgress.user_id == self.user["user_id"]))
+            db.execute(delete(AuthToken).where(AuthToken.user_id == self.user["user_id"]))
             db.execute(delete(User).where(User.user_id == self.user["user_id"]))
             db.commit()
         finally:
