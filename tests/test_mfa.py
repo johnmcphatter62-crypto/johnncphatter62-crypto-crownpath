@@ -1,3 +1,4 @@
+import hashlib
 import os
 import unittest
 import uuid
@@ -10,7 +11,7 @@ os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-mfa-tests-
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from crownpath.auth import create_user
+from crownpath.auth import _hash_mfa_recovery_code, create_user
 from crownpath.database import init_db, session
 from crownpath.main import app
 from crownpath.models import AuthToken, User
@@ -111,6 +112,15 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/verify", json={"challenge": "x" * 32, "code": "123456"})
         self.assertEqual(response.status_code, 401, response.text)
 
+    def test_recovery_code_hash_is_keyed_and_user_bound(self):
+        code = "12345678"
+        plain_sha256 = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        first = _hash_mfa_recovery_code(self.user["user_id"], code)
+        second = _hash_mfa_recovery_code("CP-USR-DIFFERENT", code)
+        self.assertNotEqual(first, plain_sha256)
+        self.assertNotEqual(first, second)
+        self.assertEqual(len(first), 64)
+
     def test_recovery_code_is_one_time_use_through_login(self):
         _, recovery_codes = self.enable_mfa()
         recovery_code = recovery_codes[0]
@@ -120,6 +130,10 @@ class MfaIntegrationTest(unittest.TestCase):
             self.assertEqual(len(rows), 8)
             stored_hashes = {row.token_hash for row in rows}
             self.assertFalse(any(code in stored_hashes for code in recovery_codes))
+            plain_hashes = {hashlib.sha256(code.encode("utf-8")).hexdigest() for code in recovery_codes}
+            self.assertTrue(stored_hashes.isdisjoint(plain_hashes))
+            expected_hashes = {_hash_mfa_recovery_code(self.user["user_id"], code) for code in recovery_codes}
+            self.assertEqual(stored_hashes, expected_hashes)
         finally:
             db.close()
 
