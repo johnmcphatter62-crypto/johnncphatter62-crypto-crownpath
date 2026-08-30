@@ -114,6 +114,11 @@ def _hash_one_time_token(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _hash_mfa_recovery_code(user_id: str, code: str) -> str:
+    message = f"mfa-recovery:{user_id}:{code.strip()}".encode("utf-8")
+    return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
 def create_one_time_token(user_id: str, token_type: str, minutes: int = 30) -> str:
     raw = secrets.token_urlsafe(32)
     token = AuthToken(
@@ -397,7 +402,7 @@ def generate_mfa_recovery_codes(user_id: str, count: int = MFA_RECOVERY_CODE_COU
             db.add(AuthToken(
                 token_id=f"CP-TOK-{uuid.uuid4().hex[:12].upper()}",
                 user_id=user_id,
-                token_hash=_hash_one_time_token(code),
+                token_hash=_hash_mfa_recovery_code(user_id, code),
                 token_type="MFA_RECOVERY",
                 expires_at=expires_at,
                 created_at=now_utc(),
@@ -409,7 +414,7 @@ def generate_mfa_recovery_codes(user_id: str, count: int = MFA_RECOVERY_CODE_COU
 
 
 def consume_mfa_recovery_code(user_id: str, code: str) -> bool:
-    token_hash = _hash_one_time_token(code.strip())
+    token_hash = _hash_mfa_recovery_code(user_id, code)
     db = session()
     try:
         token = db.scalar(select(AuthToken).where(
