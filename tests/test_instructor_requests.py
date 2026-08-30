@@ -11,7 +11,7 @@ from sqlalchemy import delete
 from crownpath.auth import create_user
 from crownpath.database import init_db, session
 from crownpath.main import app
-from crownpath.models import InstructorRequest, User
+from crownpath.models import AuthToken, InstructorRequest, User
 
 
 class InstructorRequestIntegrationTest(unittest.TestCase):
@@ -39,10 +39,12 @@ class InstructorRequestIntegrationTest(unittest.TestCase):
 
     def tearDown(self):
         self.client.cookies.clear()
+        user_ids = [self.learner["user_id"], self.owner["user_id"]]
         db = session()
         try:
-            db.execute(delete(InstructorRequest).where(InstructorRequest.user_id.in_([self.learner["user_id"], self.owner["user_id"]])))
-            db.execute(delete(User).where(User.user_id.in_([self.learner["user_id"], self.owner["user_id"]])))
+            db.execute(delete(InstructorRequest).where(InstructorRequest.user_id.in_(user_ids)))
+            db.execute(delete(AuthToken).where(AuthToken.user_id.in_(user_ids)))
+            db.execute(delete(User).where(User.user_id.in_(user_ids)))
             db.commit()
         finally:
             db.close()
