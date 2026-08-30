@@ -9,7 +9,7 @@ import jwt
 import pyotp
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from crownpath.database import session
@@ -415,19 +415,22 @@ def generate_mfa_recovery_codes(user_id: str, count: int = MFA_RECOVERY_CODE_COU
 
 def consume_mfa_recovery_code(user_id: str, code: str) -> bool:
     token_hash = _hash_mfa_recovery_code(user_id, code)
+    consumed_at = now_utc()
     db = session()
     try:
-        token = db.scalar(select(AuthToken).where(
-            AuthToken.user_id == user_id,
-            AuthToken.token_hash == token_hash,
-            AuthToken.token_type == "MFA_RECOVERY",
-            AuthToken.used_at.is_(None),
-        ))
-        if not token or token.expires_at < now_utc():
-            return False
-        token.used_at = now_utc()
+        result = db.execute(
+            update(AuthToken)
+            .where(
+                AuthToken.user_id == user_id,
+                AuthToken.token_hash == token_hash,
+                AuthToken.token_type == "MFA_RECOVERY",
+                AuthToken.used_at.is_(None),
+                AuthToken.expires_at >= consumed_at,
+            )
+            .values(used_at=consumed_at)
+        )
         db.commit()
-        return True
+        return result.rowcount == 1
     finally:
         db.close()
 
