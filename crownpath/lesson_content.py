@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from crownpath.advanced_lesson_content import get_advanced_lesson_content
 from crownpath.beauty_lesson_content import get_beauty_lesson_content
 from crownpath.wellness_lesson_content import get_wellness_lesson_content
@@ -6,46 +8,111 @@ from crownpath.cosmetology_core_lesson_content import get_cosmetology_core_lesso
 from crownpath.barber_core_lesson_content import get_barber_core_lesson_content
 from crownpath.home_care_lesson_content import get_home_care_lesson_content
 
-LESSON_CONTENT = {
-    "home-care-foundations": {"summary": "Build a safe, respectful foundation for providing non-medical home-care support.", "objectives": ["Recognize basic client-safety priorities.", "Protect privacy, dignity, and personal choice.", "Know when a concern should be reported or escalated."], "steps": ["Check the environment for obvious hazards before beginning a task.", "Explain what you are about to do and obtain the client's cooperation.", "Use clean hands and appropriate protective practices.", "Document or report concerns according to the organization’s procedures."], "safety_note": "CrownPath training does not replace emergency services, clinical judgment, or state-required professional credentials."},
-    "home-care-sanitation": {"summary": "Use sanitation and infection-control habits that reduce avoidable exposure in the home-care environment.", "objectives": ["Identify common contamination routes.", "Use hand hygiene at the right times.", "Separate clean items from contaminated items."], "steps": ["Clean hands before and after client-contact tasks.", "Use gloves or other protection when the task requires it.", "Clean reusable work surfaces and equipment according to product directions.", "Dispose of contaminated materials safely."], "safety_note": "Follow current employer, public-health, and state requirements when they are more specific than this lesson."},
-    "home-care-communication": {"summary": "Practice calm, professional communication with clients, families, and supervisors.", "objectives": ["Use respectful client-centered language.", "Confirm instructions rather than guessing.", "Report changes clearly and promptly."], "steps": ["Introduce yourself and explain the purpose of the interaction.", "Listen without interrupting and confirm what you heard.", "Keep private information limited to authorized people.", "Use factual language when documenting or reporting."], "safety_note": "Urgent safety concerns should be escalated through the appropriate emergency or supervisory process."},
-    "home-care-documentation": {"summary": "Create clear, factual records of home-care activities and observations.", "objectives": ["Separate facts from opinions.", "Record services accurately and promptly.", "Protect confidential records."], "steps": ["Record the date, time, service, and relevant observation.", "Use neutral and specific language.", "Correct errors according to the approved recordkeeping process.", "Store records only in authorized systems or locations."], "safety_note": "Documentation requirements vary by employer, payer, and jurisdiction; official requirements control."},
-    "barber-foundations": {"summary": "Establish professional barbering habits for consultation, sanitation, tool handling, and service preparation.", "objectives": ["Prepare a clean workstation.", "Match tools to the planned service.", "Use a structured client consultation."], "steps": ["Sanitize the station and prepare clean tools.", "Discuss the desired result and inspect visible hair/scalp condition.", "Choose guards, combs, brushes, and products appropriate to the service.", "Maintain tool control and client comfort throughout the service."], "safety_note": "Follow current state-board sanitation, scope-of-practice, and licensing rules."},
-    "barber-hair-scalp": {"summary": "Understand basic hair and scalp structure so barbering decisions are made more safely and accurately.", "objectives": ["Identify the basic hair shaft and follicle structures.", "Recognize visible conditions that may require service modification.", "Avoid diagnosing medical scalp disorders."], "steps": ["Observe density, texture, growth direction, and visible scalp condition.", "Ask about sensitivities and prior reactions.", "Modify or postpone service when a visible condition raises safety concerns.", "Refer medical concerns to an appropriate licensed healthcare professional."], "safety_note": "Barbering education is not medical diagnosis or treatment."},
-    "barber-cutting-grooming": {"summary": "Use controlled sectioning, cutting, fading, and grooming sequences to produce consistent results.", "objectives": ["Plan a cut before removing length.", "Use guides and blending zones consistently.", "Finish and inspect the service systematically."], "steps": ["Establish the shape, length, and first guide.", "Work methodically through sections or fade zones.", "Cross-check balance and blend transitions.", "Detail the perimeter and finish according to the consultation."], "safety_note": "Keep blades, clippers, and sharp tools maintained and use them only as intended."},
-    "barber-consultation-safety": {"summary": "Combine client consultation with shop-safety routines before, during, and after barber services.", "objectives": ["Confirm service expectations.", "Identify contraindications within barbering scope.", "Complete safe cleanup and reset."], "steps": ["Confirm desired style and relevant service history.", "Check tools, cords, surfaces, and client protection.", "Monitor comfort and stop if an unexpected reaction occurs.", "Clean, disinfect, store tools, and reset the workstation."], "safety_note": "Use the product label, manufacturer instructions, and applicable state-board rules as controlling guidance."},
-    "barber-scalp-camera-assessment": {"summary": "Use photographs or approved imaging tools to document visible hair and scalp characteristics without making a medical diagnosis.", "objectives": ["Capture consistent scalp images.", "Describe visible dryness, buildup, breakage, density, and irritation neutrally.", "Use observations to guide cosmetic service choices and referrals."], "steps": ["Obtain client permission before capturing an image and explain how it will be used.", "Use consistent lighting, distance, and clean imaging equipment.", "Record only visible cosmetic observations such as flakes, dryness, oiliness, breakage, or product buildup.", "Choose an appropriate cosmetic care plan or pause and refer when signs fall outside barbering scope."], "safety_note": "Camera or AI observations are screening and documentation aids only. They must not diagnose disease or replace a qualified healthcare professional."},
-    "cosmetology-foundations": {"summary": "Build a professional cosmetology service from consultation through sanitation and service completion.", "scope": "General cosmetology service preparation, consultation, sanitation, client protection, service planning, completion, and professional follow-up.", "estimated_minutes": 90, "objectives": ["Prepare a compliant workstation.", "Conduct an effective consultation.", "Use safe service sequencing."], "steps": ["Sanitize the station and assemble clean tools.", "Discuss goals, history, sensitivities, and visible hair/scalp condition.", "Select the service plan and products within scope of practice.", "Complete the service, sanitation, and client-care instructions."], "safety_note": "Current state-board and manufacturer requirements take priority over general training guidance. CrownPath cosmetology education does not authorize medical diagnosis or treatment."},
-    "cosmetology-chemical-safety": {"summary": "Use a disciplined safety process for chemical-service preparation, product handling, and client monitoring.", "objectives": ["Follow product directions and warnings.", "Use required preliminary tests when applicable.", "Recognize when a chemical service should be stopped."], "steps": ["Read the full manufacturer instructions before mixing or applying.", "Perform required consultation and preliminary testing.", "Use ventilation, protection, timing, and application controls.", "Stop, rinse, or escalate according to instructions if an adverse reaction occurs."], "safety_note": "Never improvise chemical mixtures or exceed manufacturer directions."},
-    "cosmetology-hair-replacement": {"summary": "Introduce non-surgical hair-replacement and scalp-application fundamentals within cosmetology education.", "objectives": ["Distinguish cosmetic hair replacement from surgical hair transplantation.", "Understand basic attachment and scalp-preparation concepts.", "Recognize when specialized medical or licensed services are required."], "steps": ["Consult on goals, scalp condition, sensitivities, and the type of hair-replacement system.", "Clean and prepare the scalp and system according to product directions.", "Use only cosmetic attachment methods that are lawful within the practitioner’s scope.", "Explain maintenance, removal, sanitation, and follow-up care."], "safety_note": "CrownPath does not teach or authorize surgical implantation, skin incision, graft harvesting, anesthesia, or other medical procedures."},
-    "cosmetology-makeup-artistry": {"summary": "Build a complete makeup service from consultation and sanitation through complexion, color, finishing, and client education.", "objectives": ["Maintain hygienic makeup application practices.", "Select products and techniques for the client's goals and visible skin characteristics.", "Create balanced looks within cosmetic scope."], "steps": ["Consult on desired look, sensitivities, product history, and visible skin condition.", "Prepare sanitized tools and hygienic product-dispensing methods.", "Apply complexion, color, eye and lip products in a planned sequence.", "Finish the look and explain safe removal and aftercare."], "safety_note": "Do not apply cosmetics over conditions that appear infectious, severely irritated, injured, or otherwise unsafe for cosmetic service; refer when appropriate."},
-    "cosmetology-nail-care": {"summary": "Introduce manicure and pedicure service fundamentals with strong sanitation, consultation, and safe cosmetic nail-care practices.", "objectives": ["Prepare a sanitary nail-service station.", "Perform basic cosmetic manicure and pedicure sequences.", "Recognize visible conditions that require postponement or referral."], "steps": ["Consult, inspect visible nail and surrounding skin condition, and prepare sanitized implements.", "Shape and care for nails and surrounding cosmetic areas without cutting living tissue beyond lawful scope.", "Apply permitted cosmetic products using manufacturer directions and hygienic practices.", "Clean and disinfect reusable implements and surfaces, dispose of single-use items, and explain home maintenance."], "safety_note": "Never diagnose or treat nail disease. Follow state scope-of-practice rules, infection-control requirements, and manufacturer directions."},
-    "wellness-massage-foundations": {"summary": "Introduce non-medical wellness massage concepts, client comfort, positioning, communication, and professional boundaries.", "objectives": ["Explain the purpose and limits of wellness-oriented massage education.", "Use consent, draping, positioning, and pressure communication appropriately.", "Recognize when massage should not proceed and when licensed care is required."], "steps": ["Confirm the service purpose, client preferences, boundaries, and relevant contraindication information.", "Prepare a clean, private environment and position the client comfortably with appropriate draping.", "Use only techniques permitted by the practitioner's training, credential, and jurisdiction while continually checking comfort.", "End gradually, provide general non-medical aftercare guidance, sanitize the area, and document the service when required."], "safety_note": "Massage licensing and scope vary by jurisdiction. CrownPath education does not authorize massage therapy where a separate license or credential is required."},
-    "wellness-fitness-foundations": {"summary": "Teach general wellness and fitness habits that support safe movement and recovery without prescribing medical treatment.", "objectives": ["Understand basic warm-up, mobility, strength, recovery, hydration, and rest concepts.", "Use gradual progression and body-awareness principles.", "Recognize warning signs that require stopping activity or seeking qualified care."], "steps": ["Begin with an appropriate warm-up and assess comfort before increasing effort.", "Use controlled technique and gradual progression rather than sudden overload.", "Include recovery, hydration, sleep, and general wellness habits as part of the routine.", "Stop activity for concerning symptoms and seek appropriate professional or emergency care when indicated."], "safety_note": "This is general wellness education, not individualized medical, rehabilitation, nutrition, or exercise-prescription advice."},
-    "wellness-client-experience": {"summary": "Combine beauty and wellness services into a respectful client journey built around consent, comfort, privacy, communication, and follow-up.", "objectives": ["Map the client journey from booking to follow-up.", "Use informed service consent and professional boundaries.", "Coordinate beauty and wellness services without crossing professional scopes."], "steps": ["Confirm booking details, service goals, accessibility needs, and relevant preferences.", "Explain each service, expected experience, limits, price, and aftercare before beginning.", "Coordinate handoffs between authorized professionals while protecting client privacy.", "Collect feedback, document concerns, and schedule appropriate follow-up without making unsupported health claims."], "safety_note": "Each professional remains responsible for working within their own license, credential, training, and applicable law."},
-    "avatar-bot-builder-foundations": {"summary": "Introduce the CrownPath Avatar & Bot Builder as a controlled educational and operational layer for guiding learners, instructors, clients, and authorized staff.", "objectives": ["Define a bot or avatar's role before activation.", "Assign only approved knowledge and permissions.", "Apply human-review and escalation boundaries to safety-sensitive tasks."], "steps": ["Choose the avatar or bot purpose, such as learner guide, instructor assistant, client helper, or Owner support.", "Assign the approved course areas, language, voice or text mode, and role-based permissions.", "Configure prohibited actions, escalation rules, privacy limits, and human-approval requirements.", "Test the avatar or bot against normal, uncertain, safety-sensitive, and out-of-scope questions before publishing."], "safety_note": "CrownPath avatars and bots may educate and assist, but they must not independently diagnose medical conditions, approve regulated credentials, override security controls, or make decisions reserved for qualified humans."},
+
+FOUNDATION_LESSON_CONTENT = {
+    "cosmetology-foundations": {
+        "summary": "Build a professional cosmetology service from consultation through sanitation, client protection, service planning, completion, and follow-up.",
+        "scope": "General cosmetology service preparation, consultation, sanitation, client protection, service planning, completion, and professional follow-up. Current state requirements and manufacturer directions control where more specific.",
+        "estimated_minutes": 120,
+        "prerequisites": ["CrownPath professional conduct orientation"],
+        "materials": ["Consenting model or mannequin", "Clean cosmetology tools", "Client protection supplies", "Sanitation/disinfection supplies", "Consultation form", "Manufacturer directions for products used"],
+        "objectives": [
+            "Prepare a compliant and organized workstation.",
+            "Conduct an effective client consultation.",
+            "Observe visible hair/scalp characteristics without diagnosis.",
+            "Select services and products within lawful scope.",
+            "Complete safe service closeout, sanitation, and client-care instructions.",
+        ],
+        "lesson_sections": [
+            {"title": "Professional preparation", "content": "Prepare a clean workstation, organize required tools, separate clean and used items, inspect equipment, and protect the client appropriately before service begins."},
+            {"title": "Consultation", "content": "Confirm service goals, relevant history, sensitivities, prior reactions, maintenance expectations, and visible hair/scalp condition. Clarify what the service can reasonably accomplish and stay within professional scope."},
+            {"title": "Visible observation and referral boundaries", "content": "Describe visible characteristics such as dryness, oiliness, breakage, flakes, buildup, texture, density, or irritation neutrally. Do not diagnose disease. Modify, postpone, or refer when a concern falls outside cosmetic scope."},
+            {"title": "Service and product planning", "content": "Choose tools, techniques, and products based on consultation, visible condition, service goal, manufacturer directions, and lawful scope. Do not improvise chemical or regulated procedures."},
+            {"title": "Client protection and comfort", "content": "Use required draping or barriers, monitor temperature and comfort, communicate before major service changes, and stop when an unexpected reaction or safety concern occurs."},
+            {"title": "Closeout and sanitation", "content": "Review the result, provide general cosmetic maintenance guidance, document relevant service information, dispose of single-use items properly, process reusable tools, and reset the workstation."},
+        ],
+        "steps": [
+            "Sanitize the station and assemble clean tools.",
+            "Discuss goals, history, sensitivities, and visible hair/scalp condition.",
+            "Select the service plan and products within scope of practice.",
+            "Complete the service, sanitation, and client-care instructions.",
+        ],
+        "demonstration": {
+            "title": "Complete cosmetology service setup and closeout",
+            "instructions": [
+                "Prepare a clean station and client protection.",
+                "Conduct a structured consultation and visible cosmetic observation.",
+                "Select an instructor-approved service plan and products.",
+                "Demonstrate comfort checks and safe professional boundaries.",
+                "Complete service closeout, sanitation, documentation, and reset.",
+            ],
+        },
+        "guided_practice": [
+            "Learners prepare a workstation using a sanitation checklist.",
+            "Learners practice consultation and neutral visible observation language.",
+            "Learners choose between proceed, modify, postpone, and refer scenarios.",
+            "Learners complete a service-closeout and station-reset simulation.",
+        ],
+        "knowledge_check": [
+            {"question": "Which statement stays within cosmetology scope?", "options": ["You have psoriasis", "I can see visible redness and flaking, so I recommend postponing and seeking appropriate evaluation", "This product will cure the condition", "The camera confirms a disease"], "answer_index": 1, "rationale": "Cosmetology learners may describe visible findings and make safe service decisions without diagnosis."},
+            {"question": "What should control professional product use?", "options": ["Guesswork", "Manufacturer directions and applicable rules", "The strongest possible method", "A social-media comment"], "answer_index": 1, "rationale": "Manufacturer directions and applicable professional requirements control product use."},
+        ],
+        "practical_checkoff": ["Prepares clean workstation", "Conducts consultation", "Uses neutral observation language", "Selects service within scope", "Protects client and monitors comfort", "Completes sanitation and closeout"],
+        "instructor_notes": ["Require learners to distinguish cosmetic observation from diagnosis.", "Verify current jurisdiction-specific rules before representing any activity as approved licensure credit."],
+        "student_handout": {"title": "CrownPath Cosmetology Foundations", "sections": ["PREPARE: station, tools, sanitation and client protection.", "CONSULT: goals, history, sensitivities and visible condition.", "PLAN: lawful service, approved products and manufacturer directions.", "SERVE: comfort, communication and professional boundaries.", "FINISH: client guidance, documentation, sanitation and reset."]},
+        "printable": {"enabled": True, "exclude_answer_key_for_learners": True},
+        "safety_note": "Current state-board and manufacturer requirements take priority over general training guidance. CrownPath cosmetology education does not authorize medical diagnosis or treatment.",
+    }
 }
 
 
+INSTRUCTOR_ONLY_KEYS = {
+    "answer_index",
+    "rationale",
+    "instructor_notes",
+    "answer_key",
+    "instructor_answer_key",
+    "correct_answer",
+}
+
+
+def _sanitize_for_learner(value):
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_for_learner(item)
+            for key, item in value.items()
+            if key not in INSTRUCTOR_ONLY_KEYS
+        }
+    if isinstance(value, list):
+        return [_sanitize_for_learner(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_for_learner(item) for item in value)
+    return value
+
+
+def get_canonical_lesson_content(lesson_id: str):
+    for getter in (
+        get_advanced_lesson_content,
+        get_beauty_lesson_content,
+        get_wellness_lesson_content,
+        get_experience_agent_lesson_content,
+        get_cosmetology_core_lesson_content,
+        get_barber_core_lesson_content,
+        get_home_care_lesson_content,
+    ):
+        content = getter(lesson_id)
+        if content is not None:
+            return content
+    return FOUNDATION_LESSON_CONTENT.get(lesson_id)
+
+
 def get_lesson_content(lesson_id: str):
-    advanced = get_advanced_lesson_content(lesson_id)
-    if advanced is not None:
-        return advanced
-    beauty = get_beauty_lesson_content(lesson_id)
-    if beauty is not None:
-        return beauty
-    wellness = get_wellness_lesson_content(lesson_id)
-    if wellness is not None:
-        return wellness
-    experience_agent = get_experience_agent_lesson_content(lesson_id)
-    if experience_agent is not None:
-        return experience_agent
-    cosmetology_core = get_cosmetology_core_lesson_content(lesson_id)
-    if cosmetology_core is not None:
-        return cosmetology_core
-    barber_core = get_barber_core_lesson_content(lesson_id)
-    if barber_core is not None:
-        return barber_core
-    home_care = get_home_care_lesson_content(lesson_id)
-    return home_care if home_care is not None else LESSON_CONTENT.get(lesson_id)
+    """Return a learner-safe copy of lesson content.
+
+    Canonical instructor metadata remains server-side and can be accessed through
+    get_canonical_lesson_content by trusted instructor/owner workflows.
+    """
+    content = get_canonical_lesson_content(lesson_id)
+    if content is None:
+        return None
+    return _sanitize_for_learner(deepcopy(content))
