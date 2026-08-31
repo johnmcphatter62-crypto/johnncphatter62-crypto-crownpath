@@ -21,7 +21,7 @@ from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
 
-app=FastAPI(title="CrownPath",version="1.14.0-github")
+app=FastAPI(title="CrownPath",version="1.15.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
 startup_status=validate_startup()
 BASE_DIR=Path(__file__).resolve().parent.parent
@@ -84,18 +84,31 @@ def learner_catalog(role:str):
             ("home-care-sanitation","Sanitation & Infection Control"),
             ("home-care-communication","Professional Communication"),
             ("home-care-documentation","Care Documentation"),
+            ("wellness-client-experience","Wellness Client Experience & Professional Boundaries"),
+            ("avatar-bot-builder-foundations","CrownPath Avatar & Bot Builder Foundations"),
         ],
         "BARBER":[
             ("barber-foundations","Barbering Foundations"),
             ("barber-hair-scalp","Hair & Scalp Science"),
+            ("barber-scalp-camera-assessment","Scalp Camera & AI-Assisted Cosmetic Assessment"),
             ("barber-cutting-grooming","Cutting, Fading & Grooming"),
             ("barber-consultation-safety","Client Consultation & Shop Safety"),
+            ("wellness-client-experience","Beauty & Wellness Client Experience"),
+            ("wellness-fitness-foundations","Fitness, Recovery & General Wellness Foundations"),
+            ("avatar-bot-builder-foundations","CrownPath Avatar & Bot Builder Foundations"),
         ],
         "COSMETOLOGY_PRO":[
             ("cosmetology-foundations","Cosmetology Foundations"),
             ("cosmetology-hair-scalp","Hair & Scalp Science"),
+            ("cosmetology-scalp-camera-assessment","Scalp Camera & AI-Assisted Cosmetic Assessment"),
             ("cosmetology-chemical-safety","Chemical Services & Product Safety"),
-            ("cosmetology-hair-replacement","Hair Replacement & Scalp Application Fundamentals"),
+            ("cosmetology-hair-replacement","Non-Surgical Hair Replacement & Scalp Application"),
+            ("cosmetology-makeup-artistry","Professional Makeup Artistry"),
+            ("cosmetology-nail-care","Manicure & Pedicure Nail Care"),
+            ("wellness-massage-foundations","Wellness Massage Foundations & Scope Awareness"),
+            ("wellness-fitness-foundations","Fitness, Recovery & General Wellness Foundations"),
+            ("wellness-client-experience","Integrated Beauty & Wellness Client Experience"),
+            ("avatar-bot-builder-foundations","CrownPath Avatar & Bot Builder Foundations"),
         ],
     }
     return catalogs.get(role,[])
@@ -135,7 +148,7 @@ def home(): return FileResponse(FRONTEND_DIR/"index.html")
 
 @app.get("/api/health")
 def health():
-    return {"application":"CrownPath","version":"1.14.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
+    return {"application":"CrownPath","version":"1.15.0-github","overall":"HEALTHY","environment":"demo" if DEMO_MODE else "configured"}
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
@@ -220,6 +233,7 @@ def learner_dashboard(user=Depends(require_permission("academy.view"))):
         {"type":"VIDEO","title":"Orientation & Professional Standards"},
         {"type":"3D_MODEL","title":"Interactive Hair & Scalp Anatomy"} if role!="HOME_CARE" else {"type":"INTERACTIVE","title":"Safe Home Care Environment"},
         {"type":"ANIMATION","title":"Practical Skills Demonstration"},
+        {"type":"AI_GUIDE","title":"CrownPath Avatar & Bot Learning Guide"},
         {"type":"QUIZ","title":"Pathway Knowledge Check"},
     ]
     return {"pathway":pathway_names.get(role,role.replace("_"," ").title()),"role":role,"modules":modules,"digital_content":digital,"overall_progress":overall,"next_step":next_item["title"] if next_item else "Pathway lessons complete"}
@@ -342,12 +356,12 @@ def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(req
 
 @app.get("/api/avatar/startup/{role}")
 def avatar_startup(role:str):
-    role=role.upper(); messages={"OWNER":"Welcome to CrownPath. I can guide you through operations, Academy, security, audio, and launch readiness.","INSTRUCTOR":"Welcome, Instructor. I can guide your teaching, digital content, and classroom tools.","BARBER":"Welcome to your Barber pathway.","COSMETOLOGY_PRO":"Welcome to your Cosmetology pathway.","HOME_CARE":"Welcome to your Home Care pathway."}
+    role=role.upper(); messages={"OWNER":"Welcome to CrownPath. I can guide you through operations, Academy, security, audio, Avatar & Bot Builder, and launch readiness.","INSTRUCTOR":"Welcome, Instructor. I can guide your teaching, digital content, Avatar & Bot Builder, and classroom tools.","BARBER":"Welcome to your Barber pathway. Your CrownPath guide can support lessons, scalp-camera education, practical skills, and bot-builder training.","COSMETOLOGY_PRO":"Welcome to your Cosmetology pathway. Your CrownPath guide can support beauty, scalp, makeup, nails, wellness, and bot-builder lessons.","HOME_CARE":"Welcome to your Home Care pathway. Your CrownPath guide can support safety, communication, client experience, and bot-builder lessons."}
     return {"role":role,"message":messages.get(role,"Welcome to CrownPath."),"guide_enabled":True}
 @app.get("/api/academy")
-def academy(user=Depends(require_permission("academy.view"))): return {"modules":[{"title":"Professional Foundations","status":"READY"},{"title":"Hair & Scalp Science","status":"READY"},{"title":"Digital Learning Lab","status":"READY"},{"title":"Business & Client Experience","status":"READY"}]}
+def academy(user=Depends(require_permission("academy.view"))): return {"modules":[{"title":"Professional Foundations","status":"READY"},{"title":"Hair, Scalp & Imaging Science","status":"READY"},{"title":"Beauty, Grooming & Practical Skills","status":"READY"},{"title":"Wellness, Massage & Fitness Foundations","status":"READY"},{"title":"Avatar & Bot Builder Lab","status":"READY"},{"title":"Business & Client Experience","status":"READY"}]}
 @app.get("/api/digital-content")
-def digital_content(user=Depends(require_permission("digital.view"))): return {"assets":[{"type":"VIDEO","title":"Hair & Scalp Foundations"},{"type":"3D_MODEL","title":"Interactive Hair Follicle"},{"type":"ANIMATION","title":"Sectioning Demonstration"},{"type":"QUIZ","title":"Knowledge Check"}]}
+def digital_content(user=Depends(require_permission("digital.view"))): return {"assets":[{"type":"VIDEO","title":"Hair & Scalp Foundations"},{"type":"3D_MODEL","title":"Interactive Hair Follicle"},{"type":"ANIMATION","title":"Beauty & Grooming Skills Demonstration"},{"type":"AI_GUIDE","title":"Avatar & Bot Builder Learning Lab"},{"type":"QUIZ","title":"Knowledge Check"}]}
 @app.get("/api/audio/stations")
 def stations(): return {"stations":list_audio_stations(),"notice":"Production playback requires an authorized business music source."}
 @app.get("/api/audio/zones")
