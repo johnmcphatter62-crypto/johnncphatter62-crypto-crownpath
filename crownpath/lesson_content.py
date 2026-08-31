@@ -1,6 +1,7 @@
 from crownpath.advanced_lesson_content import get_advanced_lesson_content
 from crownpath.beauty_lesson_content import get_beauty_lesson_content
 from crownpath.wellness_lesson_content import get_wellness_lesson_content
+from crownpath.experience_agent_lesson_content import get_experience_agent_lesson_content
 
 LESSON_CONTENT = {
     "home-care-foundations": {"summary": "Build a safe, respectful foundation for providing non-medical home-care support.", "objectives": ["Recognize basic client-safety priorities.", "Protect privacy, dignity, and personal choice.", "Know when a concern should be reported or escalated."], "steps": ["Check the environment for obvious hazards before beginning a task.", "Explain what you are about to do and obtain the client's cooperation.", "Use clean hands and appropriate protective practices.", "Document or report concerns according to the organization’s procedures."], "safety_note": "CrownPath training does not replace emergency services, clinical judgment, or state-required professional credentials."},
@@ -32,4 +33,7 @@ def get_lesson_content(lesson_id: str):
     if beauty is not None:
         return beauty
     wellness = get_wellness_lesson_content(lesson_id)
-    return wellness if wellness is not None else LESSON_CONTENT.get(lesson_id)
+    if wellness is not None:
+        return wellness
+    experience_agent = get_experience_agent_lesson_content(lesson_id)
+    return experience_agent if experience_agent is not None else LESSON_CONTENT.get(lesson_id)
