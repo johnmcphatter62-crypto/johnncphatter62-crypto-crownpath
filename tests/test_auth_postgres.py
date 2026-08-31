@@ -19,6 +19,7 @@ from crownpath.auth import (
     decode_access_token,
     get_user_by_email,
     revoke_access_token,
+    update_password,
 )
 from crownpath.database import init_db, session
 from crownpath.models import AuthToken, User
@@ -99,6 +100,37 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
         self.assertTrue(revoke_access_token(token))
         self.assertIsNone(decode_access_token(token))
         self.assertFalse(revoke_access_token(token))
+
+        db = session()
+        try:
+            db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+            db.execute(delete(User).where(User.user_id == created["user_id"]))
+            db.commit()
+        finally:
+            db.close()
+
+    def test_password_change_revokes_all_active_sessions(self):
+        suffix = uuid.uuid4().hex[:10]
+        email = f"crownpath-password-reset-{suffix}@example.invalid"
+        old_password = "CrownPath-Old-Password-2026!"
+        new_password = "CrownPath-New-Password-2026!"
+        created = create_user("CrownPath Password Reset", email, old_password, "HOME_CARE")
+        first_token = create_access_token(created["user_id"])
+        second_token = create_access_token(created["user_id"])
+
+        self.assertEqual(decode_access_token(first_token), created["user_id"])
+        self.assertEqual(decode_access_token(second_token), created["user_id"])
+
+        update_password(created["user_id"], new_password)
+
+        self.assertIsNone(decode_access_token(first_token))
+        self.assertIsNone(decode_access_token(second_token))
+        old_login, old_status = authenticate(email, old_password)
+        self.assertIsNone(old_login)
+        self.assertEqual(old_status, "INVALID")
+        new_login, new_status = authenticate(email, new_password)
+        self.assertEqual(new_status, "OK")
+        self.assertEqual(new_login["user_id"], created["user_id"])
 
         db = session()
         try:
