@@ -549,11 +549,21 @@ def mark_email_verified(user_id: str):
 
 
 def update_password(user_id: str, new_password: str):
+    changed_at = now_utc()
     db = session()
     try:
         user = db.get(User, user_id)
         if user:
             user.password_hash = hash_password(new_password)
+            db.execute(
+                update(AuthToken)
+                .where(
+                    AuthToken.user_id == user_id,
+                    AuthToken.token_type == "SESSION",
+                    AuthToken.used_at.is_(None),
+                )
+                .values(used_at=changed_at)
+            )
             db.commit()
     finally:
         db.close()
