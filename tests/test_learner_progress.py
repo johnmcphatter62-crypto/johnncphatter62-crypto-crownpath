@@ -10,8 +10,31 @@ from sqlalchemy import delete
 
 from crownpath.auth import create_user, set_user_role
 from crownpath.database import init_db, session
-from crownpath.main import app
+from crownpath.lesson_content import get_canonical_lesson_content, get_lesson_content
+from crownpath.main import app, learner_catalog
 from crownpath.models import AuthToken, LearnerLessonStep, LearnerProgress, User
+
+
+FORBIDDEN_LEARNER_KEYS = {
+    "answer_index",
+    "rationale",
+    "instructor_notes",
+    "answer_key",
+    "instructor_answer_key",
+    "correct_answer",
+}
+
+
+def collect_keys(value):
+    keys = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            keys.add(key)
+            keys.update(collect_keys(item))
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            keys.update(collect_keys(item))
+    return keys
 
 
 class LearnerProgressIntegrationTest(unittest.TestCase):
@@ -40,6 +63,17 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
             db.close()
         self.client.cookies.clear()
 
+    def login_as_role(self, role):
+        set_user_role(self.user["user_id"], role, True)
+        self.client.cookies.clear()
+        response = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def assert_learner_safe(self, content):
+        self.assertTrue(content.get("summary"))
+        self.assertTrue(content.get("steps"))
+        self.assertFalse(FORBIDDEN_LEARNER_KEYS.intersection(collect_keys(content)))
+
     def test_step_progress_persists_and_completed_lesson_can_be_reviewed(self):
         dashboard = self.client.get("/api/learner/dashboard")
         self.assertEqual(dashboard.status_code, 200, dashboard.text)
@@ -59,6 +93,7 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertTrue(lesson["content"]["objectives"])
         self.assertTrue(lesson["content"]["steps"])
         self.assertTrue(lesson["content"]["safety_note"])
+        self.assert_learner_safe(lesson["content"])
 
         first_step = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
         self.assertEqual(first_step.status_code, 200, first_step.text)
@@ -103,6 +138,76 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertEqual(lesson["status"], "COMPLETED")
         self.assertEqual(lesson["progress"], 100)
         self.assertEqual(len(lesson["completed_steps"]), lesson["total_steps"])
+
+    def test_all_catalog_lessons_resolve_and_are_learner_safe(self):
+        for role in ("HOME_CARE", "BARBER", "COSMETOLOGY_PRO"):
+            for lesson_id, _title in learner_catalog(role):
+                with self.subTest(role=role, lesson_id=lesson_id):
+                    canonical = get_canonical_lesson_content(lesson_id)
+                    learner = get_lesson_content(lesson_id)
+                    self.assertIsNotNone(canonical)
+                    self.assertIsNotNone(learner)
+                    self.assertTrue(canonical.get("steps"))
+                    self.assertEqual(canonical["steps"], learner["steps"])
+                    self.assert_learner_safe(learner)
+
+    def test_canonical_quiz_keys_remain_server_side_but_not_in_learner_content(self):
+        lesson_ids = [
+            "home-care-foundations",
+            "barber-hair-scalp",
+            "barber-scalp-camera-assessment",
+            "cosmetology-foundations",
+            "cosmetology-hair-scalp",
+            "cosmetology-scalp-camera-assessment",
+            "cosmetology-chemical-safety",
+            "cosmetology-hair-replacement",
+            "cosmetology-makeup-artistry",
+            "cosmetology-nail-care",
+            "wellness-client-experience",
+            "avatar-bot-builder-foundations",
+        ]
+        for lesson_id in lesson_ids:
+            with self.subTest(lesson_id=lesson_id):
+                canonical = get_canonical_lesson_content(lesson_id)
+                learner = get_lesson_content(lesson_id)
+                self.assertIsNotNone(canonical)
+                self.assertIsNotNone(learner)
+                if canonical.get("knowledge_check"):
+                    self.assertIn("answer_index", canonical["knowledge_check"][0])
+                    self.assertNotIn("answer_index", learner["knowledge_check"][0])
+                    self.assertNotIn("rationale", learner["knowledge_check"][0])
+                    self.assertTrue(learner["knowledge_check"][0].get("question"))
+                    self.assertTrue(learner["knowledge_check"][0].get("options"))
+
+    def test_barber_and_cosmetology_can_open_expanded_lessons_and_cross_track_is_blocked(self):
+        self.login_as_role("BARBER")
+        barber = self.client.post("/api/learner/lessons/barber-scalp-camera-assessment/open")
+        self.assertEqual(barber.status_code, 200, barber.text)
+        self.assert_learner_safe(barber.json()["lesson"]["content"])
+        wrong_cos = self.client.post("/api/learner/lessons/cosmetology-makeup-artistry/open")
+        self.assertEqual(wrong_cos.status_code, 404)
+
+        self.login_as_role("COSMETOLOGY_PRO")
+        for lesson_id in ("cosmetology-hair-scalp", "cosmetology-scalp-camera-assessment", "cosmetology-makeup-artistry", "cosmetology-nail-care"):
+            opened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+            self.assertEqual(opened.status_code, 200, opened.text)
+            self.assert_learner_safe(opened.json()["lesson"]["content"])
+        wrong_barber = self.client.post("/api/learner/lessons/barber-foundations/open")
+        self.assertEqual(wrong_barber.status_code, 404)
+
+    def test_four_step_expanded_lesson_reaches_100_percent(self):
+        self.login_as_role("BARBER")
+        lesson_id = "barber-scalp-camera-assessment"
+        opened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(opened.status_code, 200, opened.text)
+        self.assertEqual(opened.json()["lesson"]["total_steps"], 4)
+        for step_index in range(1, 5):
+            response = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/{step_index}/complete")
+            self.assertEqual(response.status_code, 200, response.text)
+        final = self.client.post(f"/api/learner/lessons/{lesson_id}/open").json()["lesson"]
+        self.assertEqual(final["status"], "COMPLETED")
+        self.assertEqual(final["progress"], 100)
+        self.assertEqual(final["completed_steps"], [1, 2, 3, 4])
 
     def test_invalid_lesson_and_step_are_rejected(self):
         response = self.client.post("/api/learner/lessons/not-a-real-lesson/open")
