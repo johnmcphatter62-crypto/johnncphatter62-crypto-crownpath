@@ -52,8 +52,12 @@ Dignity, client choice, environmental awareness, authorized role limits, factual
 **Q: What should a learner do before starting an unfamiliar task?**
 Correct: Confirm the approved plan, training, and instructions.
 
+**Rationale:** Authorized instructions and role boundaries should be confirmed before performing an unfamiliar task.
+
 **Q: Which statement is factual rather than diagnostic?**
 Correct example: “The client coughed repeatedly during the visit and reported feeling short of breath.”
+
+**Rationale:** Factual observation describes what was seen or reported without diagnosing.
 
 ### Practical Scoring
 | Criterion | 0 | 1 | 2 | 3 |
@@ -77,7 +81,9 @@ Hands, clean/used separation, PPE, product-label compliance, reusable equipment,
 
 ### Assessment Key
 - Gloves replace hand hygiene: **No.**
+  - **Rationale:** Hand hygiene remains important before/after tasks and after glove removal as required.
 - Cleaning/disinfection product use is controlled by: **Label directions and approved procedure.**
+  - **Rationale:** Use cleaning/disinfection products according to their instructions and approved procedures.
 
 ### Practical Safety-Critical Criteria
 ☐ Correct hand hygiene
@@ -99,7 +105,9 @@ Introduction, active listening, repeat-back, privacy, accessibility, factual han
 
 ### Assessment Key
 - Unclear instruction: **Clarify and confirm before acting.**
+  - **Rationale:** Clarification helps prevent errors and respects the authorized plan.
 - Best factual report: “At 2:10 PM the client reported dizziness after standing; I helped them sit safely and notified the supervisor.”
+  - **Rationale:** The statement records time, observation/report, action, and escalation without diagnosis.
 
 ### Instructor Exercise
 Give learners opinion statements such as “The client is difficult” and require conversion into observable facts, client quotes, time, action, and notification.
@@ -115,8 +123,17 @@ If a learner argues, guesses, or overpromises during role-play, reset the scenar
 Timeliness, factual language, client report versus observation, authorized service, actions, notifications, correction process, privacy, and secure storage.
 
 ### Assessment Key
-- Appropriate note: “Client declined the scheduled walk at 10:00 AM and stated, ‘I feel tired’; supervisor notified per plan.”
-- Client records belong: **Only in authorized systems or locations.**
+**Q: Which note is most appropriate?**
+
+Correct: “Client declined the scheduled walk at 10:00 AM and stated, 'I feel tired'; supervisor notified per plan.”
+
+**Rationale:** The note records time, client decision/report, and action without judgment or diagnosis.
+
+**Q: Where should client records be stored?**
+
+Correct: **Only authorized systems or locations.**
+
+**Rationale:** Confidential records belong only in approved systems and locations.
 
 ### Practical Failure Conditions
 Automatic remediation if the learner:
@@ -136,7 +153,9 @@ Station setup, sanitation, consultation, visible observation without diagnosis, 
 
 ### Assessment Key
 - Inspect tools: **Before use.**
+  - **Rationale:** Pre-service inspection helps identify damaged or unsafe equipment before client contact.
 - Scope-appropriate observation: “I can see visible flaking and redness, so we may need to modify or postpone service.”
+  - **Rationale:** Neutral visible observation supports safe service planning without diagnosis.
 
 ### Demonstration Controls
 Show clean/used zones, cord placement, blade inspection, guard selection, cape/neck protection, safe chair position, and complete station reset.
@@ -147,6 +166,25 @@ Show clean/used zones, cord placement, blade inspection, guard selection, cape/n
 
 ### Teaching Emphasis
 Hair structure, texture, density, growth direction, visible scalp observation, dryness, damage, conditioning, cosmetic pH concepts, product selection, and referral boundaries.
+
+### Assessment Key
+**Q: Which factor should be observed before establishing a fade or taper plan?**
+
+Correct: **Growth direction and density.**
+
+**Rationale:** Growth direction and density directly affect barber cutting and blending decisions.
+
+**Q: What can CrownPath AI appropriately do with a clear scalp image?**
+
+Correct: **Flag visible flakes or redness for human review.**
+
+**Rationale:** AI may support cosmetic observation but must not diagnose or fabricate chemical measurements.
+
+**Q: What is an appropriate conditioner goal for visibly rough or damaged hair?**
+
+Correct: **Improve slip, manageability, feel, or protection according to product directions.**
+
+**Rationale:** Conditioning provides cosmetic benefits and should not be presented as medical treatment.
 
 ### Instructor Boundary
 Never permit a learner or CrownPath AI to claim an exact scalp pH from a photograph. Camera/AI may support visible documentation but not diagnosis.
@@ -160,6 +198,25 @@ Ask the learner to describe what is visible, choose a cosmetic service decision,
 
 ### Teaching Emphasis
 Consent, privacy, standardized image capture, neutral visible categories, service planning, referral, and human responsibility.
+
+### Assessment Key
+**Q: Why should barber scalp images use the same angle, lighting, and distance each visit?**
+
+Correct: **To support meaningful comparison.**
+
+**Rationale:** Standardized capture improves visual comparison over time.
+
+**Q: Which AI output is within CrownPath's intended barber scope?**
+
+Correct: **“Visible flaking detected; review image and client history before making a cosmetic service decision.”**
+
+**Rationale:** The system may flag a visible cosmetic pattern for human review without diagnosing or inventing a chemical measurement.
+
+**Q: What should happen when an image shows an open, bleeding area?**
+
+Correct: **Pause the service and follow appropriate referral/safety procedures.**
+
+**Rationale:** Open or bleeding areas require a safety response rather than routine cosmetic service.
 
 ### Safety-Critical Checkoff
 ☐ Permission before image capture
@@ -180,8 +237,11 @@ Consultation-to-cut map, silhouette, face/head-shape considerations, growth patt
 
 ### Assessment Key
 - Purpose of a guide: **Provides a repeatable length reference.**
+  - **Rationale:** A clear guide supports consistent length and shape.
 - Perimeter detailing: **After the major shape and blend are established.**
+  - **Rationale:** Detailing is most controlled after the primary shape and transitions are established.
 - Hot clipper blade: **Stop contact and follow safe cooling/maintenance procedures.**
+  - **Rationale:** Client comfort and burn prevention require stopping unsafe hot-blade contact.
 
 ### Face & Shape Coaching
 Teach learners to use visible proportions, density, growth patterns, desired silhouette, and client preference to create balance. Avoid rigid claims that one face shape has only one correct haircut.
@@ -207,8 +267,11 @@ Return to one isolated skill rather than repeating the entire haircut: guide cre
 
 ### Assessment Key
 - Damaged electrical equipment: **Remove from service and follow repair/replacement procedure.**
+  - **Rationale:** Damaged equipment should not remain in client service.
 - Out-of-scope visible concern: **Describe neutrally, postpone/modify as appropriate, recommend evaluation.**
+  - **Rationale:** Neutral observation and safe referral stay within professional boundaries.
 - Disinfectant contact time: **Follow label directions.**
+  - **Rationale:** Disinfection products must be used according to label directions, including required contact time.
 
 ### Stop Conditions
 Unsafe electrical equipment, uncontrolled sharp-tool use, severe client discomfort, significant unexpected reaction, active bleeding requiring the applicable exposure response, or an out-of-scope condition requiring referral.
@@ -224,7 +287,9 @@ Professional preparation, consultation, visible observation, scope, service/prod
 
 ### Assessment Key
 - Scope-appropriate response: “I can see visible redness and flaking, so I recommend postponing and seeking appropriate evaluation.”
+  - **Rationale:** Cosmetology learners may describe visible findings and make safe service decisions without diagnosis.
 - Product use: **Manufacturer directions and applicable rules.**
+  - **Rationale:** Manufacturer directions and applicable professional requirements control product use.
 
 ### Instructor Note
 Require learners to distinguish cosmetic observation from diagnosis in both spoken consultation and written notes.
@@ -236,6 +301,25 @@ Require learners to distinguish cosmetic observation from diagnosis in both spok
 ### Teaching Emphasis
 Hair structure, visible scalp condition, porosity/elasticity concepts, dryness, damage, conditioning, cosmetic pH education, product selection, and referral.
 
+### Assessment Key
+**Q: Can CrownPath determine a client's scalp pH from a photograph alone?**
+
+Correct: **No; appearance alone does not provide a reliable chemical pH measurement.**
+
+**Rationale:** pH is a chemical property and should not be fabricated from visual appearance.
+
+**Q: Which description stays within cosmetic observation?**
+
+Correct: **“I can see visible flaking and redness, so I recommend postponing this service and seeking appropriate evaluation.”**
+
+**Rationale:** The practitioner describes what is visible and makes a safe service decision without diagnosis.
+
+**Q: What is a reasonable goal of a conditioner for visibly dry or damaged hair?**
+
+Correct: **Improve manageability, slip, feel, or protection according to product directions.**
+
+**Rationale:** Conditioners provide cosmetic benefits; they do not diagnose or medically cure hair/scalp conditions.
+
 ### Key Boundary
 CrownPath may teach pH concepts and appropriate measurement methods. **A photograph alone cannot establish an exact scalp pH.**
 
@@ -245,6 +329,19 @@ If a learner jumps directly from an image to a disease label or exact pH claim, 
 ---
 
 ## COS-3 — Scalp Camera & AI-Assisted Cosmetic Assessment
+
+### Assessment Key
+**Q: What should AI do when it detects a visual pattern that could have several causes?**
+
+Correct: **Flag the visible pattern for human review and stay within cosmetic language.**
+
+**Rationale:** AI should support observation and review, not diagnose.
+
+**Q: Why use consistent lighting and distance?**
+
+Correct: **To make images comparable over time.**
+
+**Rationale:** Standardization improves useful visual comparison.
 
 ### Practical Safety-Critical Criteria
 ☐ Consent
@@ -265,8 +362,11 @@ Consultation, exact manufacturer instructions, required preliminary testing, PPE
 
 ### Assessment Key
 - Mixing ratio: **Manufacturer directions for the exact product system.**
+  - **Rationale:** The exact manufacturer's directions control product preparation and use.
 - Passed preliminary test guarantees no reaction: **No.**
+  - **Rationale:** Required tests reduce risk or screen for specified concerns but do not guarantee that an adverse reaction is impossible.
 - Serious unexpected burning: **Stop and follow the product's immediate-response directions; escalate care when indicated.**
+  - **Rationale:** Unexpected significant reactions require prompt safety action, not stronger or longer processing.
 
 ### Automatic Stop / Remediation
 - Inventing a chemical ratio.
@@ -287,8 +387,11 @@ Cosmetic versus surgical distinction, consultation, visible scalp/hair observati
 
 ### Assessment Key
 - Outside CrownPath course: **Implanting harvested follicles through skin incisions.**
-- Camera AI diagnoses cause of hair loss: **No.**
+  - **Rationale:** Surgical transplantation and implantation into living tissue are medical procedures and are excluded.
+- Camera AI diagnoses cause of hair loss: **No; it may support visible documentation but not medical diagnosis.**
+  - **Rationale:** Visible imaging support does not establish a medical diagnosis.
 - Attachment removal: **Manufacturer directions, lawful scope, and approved removal products.**
+  - **Rationale:** Safe removal follows the system instructions and professional scope rather than force or improvisation.
 
 ### Prohibited Practical Content
 No incision, graft harvesting, graft implantation, anesthesia, surgical transplantation, medication recommendation, or medical diagnosis.
@@ -299,6 +402,25 @@ No incision, graft harvesting, graft implantation, anesthesia, surgical transpla
 
 ### Teaching Emphasis
 Consultation, sanitation, hygienic dispensing, skin observation within cosmetic scope, complexion preparation, balance/color, eyes/lips, finishing, removal, and client education.
+
+### Assessment Key
+**Q: What is the safest approach to a shared cream product?**
+
+Correct: **Dispense product hygienically onto a clean palette when appropriate.**
+
+**Rationale:** Hygienic dispensing helps reduce cross-contamination.
+
+**Q: What should a cosmetology learner do when the intended makeup area appears severely irritated or injured?**
+
+Correct: **Postpone or modify the service and refer when appropriate.**
+
+**Rationale:** Unsafe or out-of-scope findings require a safety decision rather than diagnosis or concealment.
+
+**Q: Corrective makeup primarily means what?**
+
+Correct: **Visual balancing using cosmetic color and placement.**
+
+**Rationale:** Corrective cosmetic technique changes visual balance, not anatomy or health status.
 
 ### Safety-Critical Criteria
 ☐ Clean/sanitized tools
@@ -317,6 +439,25 @@ Use a mannequin or face chart to isolate color placement, balance, blending, and
 
 ### Teaching Emphasis
 Consultation, visible nail/skin observation, sanitation, shaping, cosmetic care, product directions, living-tissue boundaries, cleanup, and referral.
+
+### Assessment Key
+**Q: Which statement stays within cosmetic nail-care scope?**
+
+Correct: **“I see a visible change that is outside this cosmetic service, so I recommend postponing and seeking appropriate evaluation.”**
+
+**Rationale:** The learner may describe visible findings and make a safe service decision without diagnosis.
+
+**Q: What should happen to a single-use item after the service when applicable rules require disposal?**
+
+Correct: **Dispose of it according to the required process.**
+
+**Rationale:** Single-use items must not be treated as reusable when rules or manufacturer directions require disposal.
+
+**Q: What controls curing or removal of a cosmetic nail product?**
+
+Correct: **Manufacturer directions and applicable rules.**
+
+**Rationale:** Product systems should be used according to their instructions and applicable requirements.
 
 ### Instructor Boundary
 Do not permit learners to diagnose or treat nail disease. Postpone/refer when visible conditions appear unsafe or outside scope.
@@ -337,6 +478,25 @@ Do not permit learners to diagnose or treat nail disease. Postpone/refer when vi
 ### Teaching Emphasis
 Non-medical scope, consent, privacy, draping, positioning, pressure communication, comfort, contraindication awareness, sanitation, and referral.
 
+### Assessment Key
+**Q: Does completing this CrownPath unit automatically authorize a learner to practice massage therapy?**
+
+Correct: **No; licensing and scope requirements vary and must be independently satisfied.**
+
+**Rationale:** Educational completion does not replace jurisdiction-specific licensing or credential requirements.
+
+**Q: What should happen if a client withdraws consent during a wellness service?**
+
+Correct: **Stop the affected activity promptly and respect the client's decision.**
+
+**Rationale:** Client consent remains active and revocable throughout the service.
+
+**Q: Which claim is outside this general wellness lesson?**
+
+Correct: **“This technique will medically treat your injury.”**
+
+**Rationale:** Medical treatment claims are outside the unit's non-medical wellness scope.
+
 ### Instructor Regulatory Rule
 Massage scope and licensing vary. Do not represent this unit as authorization to practice massage therapy where a separate license or credential is required.
 
@@ -349,6 +509,25 @@ Lack of consent, inappropriate draping/privacy, significant pain, concerning sym
 
 ### Teaching Emphasis
 General warm-up, controlled movement, gradual progression, recovery, hydration, sleep, body awareness, and warning signs.
+
+### Assessment Key
+**Q: What is the main purpose of a warm-up?**
+
+Correct: **Gradually prepare for activity.**
+
+**Rationale:** A warm-up prepares the body gradually rather than exhausting it.
+
+**Q: Which progression approach best fits this course?**
+
+Correct: **Use gradual changes while monitoring technique and recovery.**
+
+**Rationale:** Gradual progression supports safer learning and adaptation.
+
+**Q: What should a participant do for chest pain or fainting during activity?**
+
+Correct: **Stop activity and seek appropriate emergency or professional care.**
+
+**Rationale:** Serious warning signs require stopping and appropriate care.
 
 ### Boundary
 No individualized medical rehabilitation, diagnosis, medical nutrition therapy, or exercise prescription beyond the instructor's lawful qualifications.
@@ -367,8 +546,11 @@ Booking, consent, expectations, accessibility, privacy, professional handoffs, s
 
 ### Assessment Key
 - Handoff sharing: **Only information needed for authorized continuity and safety.**
+  - **Rationale:** Handoffs should follow minimum-necessary privacy and role boundaries.
 - Client asks to stop: **Respect the request and stop or safely conclude the service.**
+  - **Rationale:** Consent remains active and revocable during the service.
 - Complaint response: **Document facts, explain approved process, escalate when needed.**
+  - **Rationale:** Professional service recovery follows authority, documentation, and escalation rules.
 
 ### Role-Play Scoring
 ☐ Explains service clearly
@@ -388,8 +570,11 @@ Narrow role definition, approved knowledge, least privilege, learner/instructor 
 
 ### Assessment Key
 - What grants protected-record permission? **Server-side authorization and approved capabilities.**
+  - **Rationale:** Permissions must be enforced by the system, not by prompt wording.
 - Learner bot asked for instructor answers: **Refuse restricted material and continue with permitted learning help.**
+  - **Rationale:** Learner-facing bots must not expose instructor-only answer keys.
 - Unverified regulatory information: **Mark uncertainty and route for qualified human verification.**
+  - **Rationale:** Regulatory conclusions require verified sources and appropriate human review.
 
 ### Required Red-Team Tests
 Every learner bot design should be tested against:
