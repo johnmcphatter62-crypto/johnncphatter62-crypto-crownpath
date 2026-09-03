@@ -1,6 +1,6 @@
 # CrownPath Master Source Book
 
-**Status:** Working master record for printable curriculum, instructor materials, student materials, operating controls, and technical reference.
+**Status:** Expanded printable master record assembled; curriculum-source reconciliation complete. Final official regulatory-source review remains required before any official-credit or approval claims.
 
 ## Purpose
 
@@ -174,39 +174,31 @@ Source lesson ID: `avatar-bot-builder-foundations`
 
 ## Volume VI — Instructor Manual
 
-For each lesson, the Instructor Edition will include:
+The Instructor Edition now includes:
 - Lesson purpose and scope
-- Estimated instructional time
-- Prerequisites
-- Materials
-- Learning objectives
-- Full lesson sections
-- Demonstration instructions
-- Guided-practice activities
+- Teaching emphasis and demonstrations
 - Knowledge-check answer keys and rationales
-- Practical checkoff rubric
+- Practical checkoff and safety-critical guidance
 - Instructor notes
 - Remediation and repeat-practice guidance
 - Safety and referral boundaries
-- Printable instructor checklist
+- Printable instructor records and checklist
+
+Canonical curriculum-source reconciliation has been completed for Home Care, Barber, Cosmetology/Beauty/Wellness, Client Experience, and Avatar/Bot lesson sources. No contradictions were identified during the recorded reconciliation passes. The Instructor Edition remains restricted.
 
 **Instructor-only material must never be included in learner-facing API responses or Student Edition exports.**
 
 ## Volume VII — Student Workbook & Printables
 
-For each learner lesson:
-- Lesson title
-- Summary
-- Learning objectives
-- Key concepts
-- Step-by-step service or learning sequence
-- Demonstration observation sheet
-- Guided-practice worksheet
-- Knowledge check without answers
+The learner-safe Student Edition has been generated with:
+- Lesson/pathway learning guidance
+- Learning objectives and key concepts
+- Step-by-step learning/service sequences
+- Guided-practice and reflection material
+- Knowledge-check prompts without answers
 - Practical checkoff expectations
-- Student handout
-- Notes page
-- Safety and scope reminder
+- Student notes and development prompts
+- Safety and scope reminders
 
 ## Volume VIII — Client, Salon, Barber Shop & Wellness Operations
 
@@ -265,6 +257,18 @@ For each learner lesson:
 - Medical diagnosis, treatment, surgical implantation, anesthesia, graft harvesting, and other medical procedures remain outside CrownPath cosmetic education unless a separately qualified and legally authorized program is created and independently reviewed.
 - Every printable lesson should remain understandable without requiring an Avatar or Bot.
 
+## Current Printable Publication Set
+
+Completed printable artifacts include:
+- CrownPath Student Edition — learner-safe workbook
+- CrownPath Practical Checkoff Packet — instructor-supervised assessment forms
+- CrownPath Instructor Edition — restricted teaching, answer-key, rationale, scoring, and remediation manual
+- CrownPath Owner & Operations Manual — restricted governance, security, regulatory, recovery, and platform-oversight reference
+- CrownPath Technical Source Reference — architecture, data, security, deployment, and integration reference
+- CrownPath Expanded Master Source Book — assembled printable publication containing the above layers with classification boundaries
+
+The assembled Master Source Book is a publication artifact. GitHub Markdown and application source remain the maintainable source records; PDFs should be regenerated when their source material changes.
+
 ## Build Status Checklist
 
 - [x] Home Care curriculum expanded
@@ -280,11 +284,16 @@ For each learner lesson:
 - [x] Client Experience expanded
 - [x] Avatar & Bot Builder expanded
 - [x] Learner answer-key protection implemented
-- [ ] Generate Student Edition printable lesson pages
-- [ ] Generate Instructor Edition printable lesson pages
-- [ ] Generate practical checkoff forms
-- [ ] Generate student worksheets and note pages
-- [ ] Generate Owner/Operations printables
-- [ ] Generate Technical Source Reference
-- [ ] Assemble final PDF Master Source Book
-- [ ] Final regulatory-source review before any official-credit claims
+- [x] Instructor canonical reconciliation completed
+- [x] Generate Student Edition printable lesson/workbook pages
+- [x] Generate Instructor Edition printable lesson pages
+- [x] Generate practical checkoff forms
+- [x] Generate student worksheets and note/reflection pages
+- [x] Generate Owner/Operations printables
+- [x] Generate Technical Source Reference
+- [x] Assemble expanded PDF Master Source Book
+- [ ] Final regulatory-source review before any official-credit or approval claims
+
+## Publication Gate Remaining
+
+The printable-source production and assembly stage is complete. The remaining publication gate is a jurisdiction-specific regulatory-source review before CrownPath represents any curriculum as officially approved, license-qualifying, continuing-education credit, State Board credit, or otherwise recognized by a regulatory authority.
