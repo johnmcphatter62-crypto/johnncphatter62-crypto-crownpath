@@ -38,6 +38,12 @@ def now_utc():
     return datetime.now(timezone.utc)
 
 
+def as_utc(value: datetime) -> datetime:
+    # SQLite returns naive datetimes even for timezone-aware columns.
+    # Values stored by CrownPath are UTC on both SQLite and PostgreSQL.
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 def _user_dict(user: User | None):
     if not user:
         return None
@@ -109,7 +115,7 @@ def _active_session(user_id: str, session_id: str) -> bool:
             AuthToken.token_type == "SESSION",
             AuthToken.used_at.is_(None),
         ))
-        return bool(token and token.expires_at >= now_utc())
+        return bool(token and as_utc(token.expires_at) >= now_utc())
     finally:
         db.close()
 
@@ -218,7 +224,7 @@ def consume_one_time_token(raw: str, token_type: str):
                 AuthToken.used_at.is_(None),
             )
         )
-        if not token or token.expires_at < now_utc():
+        if not token or as_utc(token.expires_at) < now_utc():
             return None
         token.used_at = now_utc()
         user_id = token.user_id
@@ -420,7 +426,7 @@ def _clear_login_failures(user_id):
 
 def _is_locked(user):
     locked_until = user.get("locked_until")
-    return bool(locked_until and locked_until > now_utc())
+    return bool(locked_until and as_utc(locked_until) > now_utc())
 
 
 def authenticate(email: str, password: str):

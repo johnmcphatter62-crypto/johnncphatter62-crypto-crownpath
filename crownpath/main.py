@@ -61,11 +61,26 @@ class InstructorReviewRequest(BaseModel):
     decision:str
     note:str|None=Field(default=None,max_length=1000)
 
+def release_flag_enabled(name:str) -> bool:
+    return os.getenv(name, "false").strip().lower() == "true"
+
+def role_access_approved(role:str) -> bool:
+    role = role.upper()
+    if role == "OWNER":
+        return True
+    if role == "INSTRUCTOR":
+        return release_flag_enabled("CROWNPATH_INSTRUCTOR_ACCESS_APPROVED")
+    return role in {"HOME_CARE", "BARBER", "COSMETOLOGY_PRO"} and release_flag_enabled("CROWNPATH_LEARNER_ACCESS_APPROVED")
+
+def enrollment_approved() -> bool:
+    return release_flag_enabled("CROWNPATH_LEARNER_ACCESS_APPROVED") and release_flag_enabled("CROWNPATH_LEARNER_ENROLLMENT_APPROVED")
+
 def current_user(request:Request):
     token=request.cookies.get("crownpath_session")
     user_id=decode_access_token(token) if token else None
     user=get_user_by_id(user_id) if user_id else None
     if not user or not user["active"]: raise HTTPException(401,"Authentication required.")
+    if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
     return user
 
 def require_permission(permission:str):
@@ -152,12 +167,17 @@ def health():
 
 @app.post("/api/auth/register")
 def register(payload:RegisterRequest,response:Response):
+    if not enrollment_approved(): raise HTTPException(403,"Learner enrollment is closed during owner testing.")
     try: user=create_user(payload.name,str(payload.email),payload.password,payload.role)
     except ValueError as exc: raise HTTPException(400,str(exc))
     except Exception: raise HTTPException(409,"Account could not be created.")
     token=create_access_token(user["user_id"])
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(user)}
+
+@app.get("/api/auth/enrollment/status")
+def enrollment_status():
+    return {"enabled":enrollment_approved(), "learner_access":release_flag_enabled("CROWNPATH_LEARNER_ACCESS_APPROVED"), "instructor_access":release_flag_enabled("CROWNPATH_INSTRUCTOR_ACCESS_APPROVED")}
 
 @app.get("/api/auth/owner-activation/status")
 def owner_activation_status():
@@ -176,6 +196,7 @@ def login(payload:LoginRequest,response:Response):
     user,status=authenticate(str(payload.email),payload.password)
     if status=="LOCKED": raise HTTPException(423,"Account temporarily locked.")
     if not user: raise HTTPException(401,"Invalid sign-in.")
+    if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
     if user["mfa_enabled"]:
         return {"authenticated":False,"mfa_required":True,"challenge":create_mfa_challenge(user["user_id"])}
     token=create_access_token(user["user_id"])
@@ -187,6 +208,7 @@ def mfa_verify(payload:MfaVerifyRequest,response:Response):
     user_id=decode_mfa_challenge(payload.challenge)
     user=get_user_by_id(user_id) if user_id else None
     if not user or not user["active"] or not user["mfa_enabled"]: raise HTTPException(401,"MFA challenge is invalid or expired.")
+    if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
     if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator or recovery code.")
     token=create_access_token(user_id)
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
@@ -363,18 +385,18 @@ def academy(user=Depends(require_permission("academy.view"))): return {"modules"
 @app.get("/api/digital-content")
 def digital_content(user=Depends(require_permission("digital.view"))): return {"assets":[{"type":"VIDEO","title":"Hair & Scalp Foundations"},{"type":"3D_MODEL","title":"Interactive Hair Follicle"},{"type":"ANIMATION","title":"Beauty & Grooming Skills Demonstration"},{"type":"AI_GUIDE","title":"Avatar & Bot Builder Learning Lab"},{"type":"QUIZ","title":"Knowledge Check"}]}
 @app.get("/api/audio/stations")
-def stations(): return {"stations":list_audio_stations(),"notice":"Production playback requires an authorized business music source."}
+def stations(user=Depends(require_permission("audio.view"))): return {"stations":list_audio_stations(),"notice":"Production playback requires an authorized business music source."}
 @app.get("/api/audio/zones")
-def zones(): return {"zones":list_audio_zones()}
+def zones(user=Depends(require_permission("audio.view"))): return {"zones":list_audio_zones()}
 @app.get("/api/audio/devices")
-def devices(): return {"devices":list_devices()}
+def devices(user=Depends(require_permission("audio.view"))): return {"devices":list_devices()}
 @app.get("/api/audio/zones/{zone_id}/playback")
-def playback(zone_id:str):
+def playback(zone_id:str,user=Depends(require_permission("audio.view"))):
     state=playback_state(zone_id)
     if not state: raise HTTPException(404,"Audio zone not found.")
     return state
 @app.get("/api/audio/provider")
-def audio_provider(): return PandoraBusinessAdapter().status()
+def audio_provider(user=Depends(require_permission("audio.view"))): return PandoraBusinessAdapter().status()
 @app.get("/api/production/readiness")
 def readiness(user=Depends(require_permission("security.manage"))): return production_readiness()
 @app.get("/api/release/checks")
