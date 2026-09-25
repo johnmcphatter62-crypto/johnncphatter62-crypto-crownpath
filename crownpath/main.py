@@ -385,18 +385,18 @@ def academy(user=Depends(require_permission("academy.view"))): return {"modules"
 @app.get("/api/digital-content")
 def digital_content(user=Depends(require_permission("digital.view"))): return {"assets":[{"type":"VIDEO","title":"Hair & Scalp Foundations"},{"type":"3D_MODEL","title":"Interactive Hair Follicle"},{"type":"ANIMATION","title":"Beauty & Grooming Skills Demonstration"},{"type":"AI_GUIDE","title":"Avatar & Bot Builder Learning Lab"},{"type":"QUIZ","title":"Knowledge Check"}]}
 @app.get("/api/audio/stations")
-def stations(): return {"stations":list_audio_stations(),"notice":"Production playback requires an authorized business music source."}
+def stations(user=Depends(require_permission("audio.view"))): return {"stations":list_audio_stations(),"notice":"Production playback requires an authorized business music source."}
 @app.get("/api/audio/zones")
-def zones(): return {"zones":list_audio_zones()}
+def zones(user=Depends(require_permission("audio.view"))): return {"zones":list_audio_zones()}
 @app.get("/api/audio/devices")
-def devices(): return {"devices":list_devices()}
+def devices(user=Depends(require_permission("audio.view"))): return {"devices":list_devices()}
 @app.get("/api/audio/zones/{zone_id}/playback")
-def playback(zone_id:str):
+def playback(zone_id:str,user=Depends(require_permission("audio.view"))):
     state=playback_state(zone_id)
     if not state: raise HTTPException(404,"Audio zone not found.")
     return state
 @app.get("/api/audio/provider")
-def audio_provider(): return PandoraBusinessAdapter().status()
+def audio_provider(user=Depends(require_permission("audio.view"))): return PandoraBusinessAdapter().status()
 @app.get("/api/production/readiness")
 def readiness(user=Depends(require_permission("security.manage"))): return production_readiness()
 @app.get("/api/release/checks")
