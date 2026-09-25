@@ -87,6 +87,28 @@ class OwnerOnlyAccessTest(unittest.TestCase):
             self.assertEqual(self.client.get("/api/auth/me").status_code, 403)
             self.assertEqual(self.client.get("/api/learner/dashboard").status_code, 403)
 
+    def test_audio_configuration_is_private_and_owner_can_view_it(self):
+        owner_email = self.add_account("OWNER")
+        learner_email = self.add_account("BARBER")
+        paths = [
+            "/api/audio/stations", "/api/audio/zones", "/api/audio/devices",
+            "/api/audio/zones/CP-ZONE-WAITING/playback", "/api/audio/provider",
+        ]
+        with patch.dict(os.environ, self.flags):
+            for path in paths:
+                with self.subTest(path=path, account="visitor"):
+                    self.assertEqual(self.client.get(path).status_code, 401)
+            with patch.dict(os.environ, {**self.flags, "CROWNPATH_LEARNER_ACCESS_APPROVED": "true"}):
+                self.assertEqual(self.login(learner_email).status_code, 200)
+                for path in paths:
+                    with self.subTest(path=path, account="learner"):
+                        self.assertEqual(self.client.get(path).status_code, 403)
+            self.client.cookies.clear()
+            self.assertEqual(self.login(owner_email).status_code, 200)
+            for path in paths:
+                with self.subTest(path=path, account="owner"):
+                    self.assertEqual(self.client.get(path).status_code, 200)
+
     def test_enrollment_requires_separate_learner_access_and_enrollment_flags(self):
         email = f"enrolled-{self.suffix}@example.com"
         payload = {"name": "New Learner", "email": email, "password": self.password, "role": "COSMETOLOGY_PRO"}
