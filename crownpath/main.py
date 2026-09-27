@@ -20,7 +20,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
-from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit
+from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit, CurriculumUnitLesson
 from crownpath.curriculum_seed import seed_legacy_curriculum
 
 app=FastAPI(title="CrownPath",version="1.15.0-github")
@@ -402,8 +402,13 @@ def owner_curriculum(user=Depends(require_permission("academy.manage"))):
                 units=db.scalars(select(CurriculumUnit).where(CurriculumUnit.course_id==course.course_id).order_by(CurriculumUnit.sequence)).all()
                 unit_items=[]
                 for unit in units:
-                    lessons=db.scalars(select(CurriculumLesson).where(CurriculumLesson.unit_id==unit.unit_id).order_by(CurriculumLesson.sequence)).all()
-                    unit_items.append({"unit_id":unit.unit_id,"title":unit.title,"sequence":unit.sequence,"lessons":[{"lesson_id":lesson.lesson_id,"title":lesson.title,"sequence":lesson.sequence,"status":lesson.status,"active_version":lesson.active_version} for lesson in lessons]})
+                    assignments=db.scalars(select(CurriculumUnitLesson).where(CurriculumUnitLesson.unit_id==unit.unit_id).order_by(CurriculumUnitLesson.sequence)).all()
+                    lesson_items=[]
+                    for assignment in assignments:
+                        lesson=db.get(CurriculumLesson,assignment.lesson_id)
+                        if lesson:
+                            lesson_items.append({"lesson_id":lesson.lesson_id,"title":lesson.title,"sequence":assignment.sequence,"required":assignment.required,"status":lesson.status,"active_version":lesson.active_version})
+                    unit_items.append({"unit_id":unit.unit_id,"title":unit.title,"sequence":unit.sequence,"lessons":lesson_items})
                 course_items.append({"course_id":course.course_id,"title":course.title,"slug":course.slug,"status":course.status,"sequence":course.sequence,"units":unit_items})
             result.append({"program_id":program.program_id,"title":program.title,"slug":program.slug,"status":program.status,"courses":course_items})
         return {"programs":result}
