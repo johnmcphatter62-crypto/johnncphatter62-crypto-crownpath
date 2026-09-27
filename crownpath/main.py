@@ -21,7 +21,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
-from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit, CurriculumUnitLesson, LearnerMastery
+from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit, CurriculumUnitLesson, LearnerMastery, LearnerMasteryEvidence
 from crownpath.curriculum_seed import seed_legacy_curriculum
 
 app=FastAPI(title="CrownPath",version="1.15.0-github")
@@ -437,6 +437,8 @@ def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,
             db.add(item)
         else: item.level=level
         item.evidence_type=evidence_type; item.evidence_reference=evidence_reference; item.verified_by=user["user_id"]; item.verified_at=now
+        db.flush()
+        db.add(LearnerMasteryEvidence(evidence_id=f"CP-ME-{uuid.uuid4().hex[:12].upper()}",mastery_id=item.mastery_id,user_id=user_id,lesson_id=lesson_id,level=level,evidence_type=evidence_type,evidence_reference=evidence_reference,note=(payload.note or "").strip() or None,verified_by=user["user_id"],verified_at=now))
         db.add(AuditEvent(user_id=user["user_id"],action="LEARNER_MASTERY_UPDATED",category="CURRICULUM",resource_type="LEARNER_MASTERY",resource_id=item.mastery_id,result="SUCCESS",reason=(payload.note or "").strip() or f"{previous or 'NONE'} -> {level}"))
         db.commit(); db.refresh(item)
         return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_at":item.verified_at}}
