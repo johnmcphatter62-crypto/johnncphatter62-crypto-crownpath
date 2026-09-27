@@ -122,5 +122,52 @@ class CurriculumPublishGateTest(unittest.TestCase):
         finally: db.close()
 
 
+    def test_draft_can_be_saved_but_approved_version_is_immutable(self):
+        lesson_id="home-care-foundations"
+        db=session()
+        try:
+            lesson=db.get(CurriculumLesson,lesson_id)
+            active=lesson.active_version
+            source=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==active))
+            import json
+            content=json.loads(source.content_json)
+        finally: db.close()
+
+        created=self.client.post(f"/api/owner/curriculum/lessons/{lesson_id}/versions",json={"content":content,"note":"editable draft"})
+        self.assertEqual(created.status_code,200,created.text)
+        version=created.json()["version"]
+        changed=dict(content); changed["owner_test_marker"]="saved draft only"
+        saved=self.client.put(f"/api/owner/curriculum/lessons/{lesson_id}/versions/{version}",json={"content":changed,"note":"save draft test"})
+        self.assertEqual(saved.status_code,200,saved.text)
+
+        approved=self.client.post(f"/api/owner/curriculum/lessons/{lesson_id}/versions/{version}/approve",json={"note":"lock draft test"})
+        self.assertEqual(approved.status_code,200,approved.text)
+        blocked=self.client.put(f"/api/owner/curriculum/lessons/{lesson_id}/versions/{version}",json={"content":content,"note":"must fail"})
+        self.assertEqual(blocked.status_code,409)
+
+        db=session()
+        try:
+            draft=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==version))
+            self.assertIn("owner_test_marker",json.loads(draft.content_json))
+            actions=set(db.scalars(select(AuditEvent.action).where(AuditEvent.user_id==self.user["user_id"])).all())
+            self.assertIn("CURRICULUM_VERSION_UPDATED",actions)
+            db.delete(draft); db.commit()
+        finally: db.close()
+
+    def test_active_published_version_rejects_edit(self):
+        lesson_id="home-care-foundations"
+        db=session()
+        try:
+            lesson=db.get(CurriculumLesson,lesson_id)
+            version=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==lesson.active_version))
+            import json
+            content=json.loads(version.content_json)
+            lesson.status="PUBLISHED"; version.approved=False; version.approved_by=None; version.approved_at=None; db.commit()
+            active=lesson.active_version
+        finally: db.close()
+        blocked=self.client.put(f"/api/owner/curriculum/lessons/{lesson_id}/versions/{active}",json={"content":content,"note":"must fail"})
+        self.assertEqual(blocked.status_code,409)
+
+
 if __name__=="__main__":
     unittest.main()
