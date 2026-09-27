@@ -405,7 +405,7 @@ MASTERY_LEVELS = ("INTRODUCED","PRACTICED","DEMONSTRATED","MASTERED")
 def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,user=Depends(require_permission("academy.manage"))):
     level=payload.level.strip().upper()
     if level not in MASTERY_LEVELS: raise HTTPException(422,"Mastery level must be INTRODUCED, PRACTICED, DEMONSTRATED, or MASTERED.")
-    with SessionLocal() as db:
+    with session() as db:
         learner=db.get(User,user_id); lesson=db.get(CurriculumLesson,lesson_id)
         if not learner: raise HTTPException(404,"Learner not found.")
         if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
