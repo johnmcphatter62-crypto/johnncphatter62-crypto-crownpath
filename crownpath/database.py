@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from crownpath.db_engine import engine, Base, SessionLocal, URL
 import crownpath.models  # noqa: F401
+import crownpath.curriculum_models  # noqa: F401
 
 
 def init_db():
