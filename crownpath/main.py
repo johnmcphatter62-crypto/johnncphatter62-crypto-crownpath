@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
-from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
+from crownpath.models import AuditEvent, InstructorRequest, LearnerLessonStep, LearnerProgress, User
 from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
@@ -61,6 +61,8 @@ class InstructorRequestCreate(BaseModel):
     statement:str=Field(min_length=10,max_length=1000)
 class InstructorReviewRequest(BaseModel):
     decision:str
+    note:str|None=Field(default=None,max_length=1000)
+class CurriculumDecisionRequest(BaseModel):
     note:str|None=Field(default=None,max_length=1000)
 
 def release_flag_enabled(name:str) -> bool:
@@ -415,6 +417,43 @@ def owner_curriculum_versions(lesson_id:str,user=Depends(require_permission("aca
         if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
         versions=db.scalars(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id).order_by(CurriculumLessonVersion.version.desc())).all()
         return {"lesson":{"lesson_id":lesson.lesson_id,"title":lesson.title,"status":lesson.status,"active_version":lesson.active_version},"versions":[{"version_id":v.version_id,"version":v.version,"source_type":v.source_type,"approved":v.approved,"approved_by":v.approved_by,"approved_at":v.approved_at,"created_at":v.created_at} for v in versions]}
+    finally: db.close()
+
+
+def record_curriculum_audit(db,user_id:str,action:str,lesson_id:str,result:str,reason:str|None=None):
+    db.add(AuditEvent(user_id=user_id,action=action,category="CURRICULUM",resource_type="LESSON",resource_id=lesson_id,result=result,reason=reason))
+
+@app.post("/api/owner/curriculum/lessons/{lesson_id}/versions/{version}/approve")
+def owner_approve_curriculum_version(lesson_id:str,version:int,payload:CurriculumDecisionRequest,user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        item=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==version))
+        if not item: raise HTTPException(404,"Curriculum lesson version not found.")
+        if item.approved: raise HTTPException(409,"This lesson version is already approved.")
+        item.approved=True; item.approved_by=user["user_id"]; item.approved_at=datetime.now(timezone.utc)
+        record_curriculum_audit(db,user["user_id"],"CURRICULUM_VERSION_APPROVED",lesson_id,"SUCCESS",(payload.note or "").strip() or None)
+        db.commit()
+        return {"lesson_id":lesson_id,"version":version,"approved":True,"published":lesson.status=="PUBLISHED"}
+    finally: db.close()
+
+@app.post("/api/owner/curriculum/lessons/{lesson_id}/versions/{version}/publish")
+def owner_publish_curriculum_version(lesson_id:str,version:int,payload:CurriculumDecisionRequest,user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        item=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==version))
+        if not item: raise HTTPException(404,"Curriculum lesson version not found.")
+        if not item.approved:
+            record_curriculum_audit(db,user["user_id"],"CURRICULUM_VERSION_PUBLISH_BLOCKED",lesson_id,"DENIED","Version must be approved before publication.")
+            db.commit()
+            raise HTTPException(409,"Approve this lesson version before publishing it.")
+        lesson.active_version=version; lesson.status="PUBLISHED"
+        record_curriculum_audit(db,user["user_id"],"CURRICULUM_VERSION_PUBLISHED",lesson_id,"SUCCESS",(payload.note or "").strip() or None)
+        db.commit()
+        return {"lesson_id":lesson_id,"version":version,"approved":True,"published":True}
     finally: db.close()
 
 @app.get("/api/avatar/startup/{role}")
