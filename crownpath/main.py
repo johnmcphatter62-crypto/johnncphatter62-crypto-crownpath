@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -63,6 +64,9 @@ class InstructorReviewRequest(BaseModel):
     decision:str
     note:str|None=Field(default=None,max_length=1000)
 class CurriculumDecisionRequest(BaseModel):
+    note:str|None=Field(default=None,max_length=1000)
+class CurriculumVersionCreateRequest(BaseModel):
+    content:dict
     note:str|None=Field(default=None,max_length=1000)
 
 def release_flag_enabled(name:str) -> bool:
@@ -424,6 +428,34 @@ def owner_curriculum_versions(lesson_id:str,user=Depends(require_permission("aca
         return {"lesson":{"lesson_id":lesson.lesson_id,"title":lesson.title,"status":lesson.status,"active_version":lesson.active_version},"versions":[{"version_id":v.version_id,"version":v.version,"source_type":v.source_type,"approved":v.approved,"approved_by":v.approved_by,"approved_at":v.approved_at,"created_at":v.created_at} for v in versions]}
     finally: db.close()
 
+
+@app.post("/api/owner/curriculum/lessons/{lesson_id}/versions")
+def owner_create_curriculum_version(lesson_id:str,payload:CurriculumVersionCreateRequest,user=Depends(require_permission("academy.manage"))):
+    """Create a new unapproved draft without changing the active version."""
+    db=session()
+    try:
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        versions=db.scalars(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id).order_by(CurriculumLessonVersion.version.desc())).all()
+        next_version=(versions[0].version if versions else 0)+1
+        item=CurriculumLessonVersion(
+            version_id=f"CP-LV-{uuid.uuid4().hex[:12].upper()}",lesson_id=lesson_id,version=next_version,
+            content_json=json.dumps(payload.content),source_type="CROWNPATH_OWNER_EDIT",approved=False,
+        )
+        db.add(item)
+        record_curriculum_audit(db,user["user_id"],"CURRICULUM_VERSION_CREATED",lesson_id,"SUCCESS",(payload.note or "").strip() or None)
+        db.commit()
+        return {"lesson_id":lesson_id,"version":next_version,"approved":False,"published":False,"active_version":lesson.active_version}
+    finally: db.close()
+
+@app.get("/api/owner/curriculum/lessons/{lesson_id}/versions/{version}/content")
+def owner_curriculum_version_content(lesson_id:str,version:int,user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        item=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==version))
+        if not item: raise HTTPException(404,"Curriculum lesson version not found.")
+        return {"lesson_id":lesson_id,"version":version,"content":json.loads(item.content_json)}
+    finally: db.close()
 
 def record_curriculum_audit(db,user_id:str,action:str,lesson_id:str,result:str,reason:str|None=None):
     db.add(AuditEvent(user_id=user_id,action=action,category="CURRICULUM",resource_type="LESSON",resource_id=lesson_id,result=result,reason=reason))
