@@ -409,6 +409,11 @@ def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,
         learner=db.get(User,user_id); lesson=db.get(CurriculumLesson,lesson_id)
         if not learner: raise HTTPException(404,"Learner not found.")
         if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        if learner.role not in ("HOME_CARE","BARBER","COSMETOLOGY_PRO"):
+            raise HTTPException(409,"Mastery can only be recorded for CrownPath learner pathways.")
+        program_slug=learner.role.lower().replace("_","-")
+        allowed=db.scalar(select(CurriculumUnitLesson.assignment_id).join(CurriculumUnit,CurriculumUnitLesson.unit_id==CurriculumUnit.unit_id).join(CurriculumCourse,CurriculumUnit.course_id==CurriculumCourse.course_id).join(CurriculumProgram,CurriculumCourse.program_id==CurriculumProgram.program_id).where(CurriculumProgram.slug==program_slug,CurriculumUnitLesson.lesson_id==lesson_id))
+        if not allowed: raise HTTPException(409,"This lesson is not assigned to the learner's CrownPath pathway.")
         item=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==user_id,LearnerMastery.lesson_id==lesson_id))
         now=datetime.now(timezone.utc)
         previous=item.level if item else None
