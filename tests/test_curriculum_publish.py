@@ -138,6 +138,26 @@ class CurriculumPublishGateTest(unittest.TestCase):
                 db.commit()
             finally: db.close()
 
+    def test_mastery_rejects_whitespace_only_evidence(self):
+        learner=create_user("Evidence Learner",f"evidence-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        try:
+            blank_type=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"   ","evidence_reference":"CP-EVIDENCE-VALID"})
+            self.assertEqual(blank_type.status_code,422,blank_type.text)
+            blank_reference=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"   "})
+            self.assertEqual(blank_reference.status_code,422,blank_reference.text)
+            db=session()
+            try:
+                saved=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==learner["user_id"],LearnerMastery.lesson_id=="home-care-foundations"))
+                self.assertIsNone(saved)
+            finally: db.close()
+        finally:
+            db=session()
+            try:
+                db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
+
     def test_publish_requires_approval_and_audits_success(self):
         lesson_id="home-care-foundations"
         db=session()
