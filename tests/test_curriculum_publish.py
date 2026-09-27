@@ -37,6 +37,22 @@ class CurriculumPublishGateTest(unittest.TestCase):
     def tearDown(self):
         db=session()
         try:
+            version=db.scalar(select(CurriculumLessonVersion).where(
+                CurriculumLessonVersion.lesson_id=="home-care-foundations",
+                CurriculumLessonVersion.version==1,
+            ))
+            lesson=db.get(CurriculumLesson,"home-care-foundations")
+            if version and version.approved_by==self.user["user_id"]:
+                version.approved=False
+                version.approved_by=None
+                version.approved_at=None
+            if lesson:
+                lesson.status="DRAFT"
+                lesson.active_version=1
+            db.query(AuditEvent).filter(
+                AuditEvent.user_id==self.user["user_id"],
+                AuditEvent.category=="CURRICULUM",
+            ).delete(synchronize_session=False)
             db.query(AuthToken).filter(AuthToken.user_id==self.user["user_id"]).delete()
             db.query(User).filter(User.user_id==self.user["user_id"]).delete()
             db.commit()
