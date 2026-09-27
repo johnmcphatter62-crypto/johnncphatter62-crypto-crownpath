@@ -405,6 +405,8 @@ MASTERY_LEVELS = ("INTRODUCED","PRACTICED","DEMONSTRATED","MASTERED")
 def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,user=Depends(require_permission("academy.manage"))):
     level=payload.level.strip().upper()
     if level not in MASTERY_LEVELS: raise HTTPException(422,"Mastery level must be INTRODUCED, PRACTICED, DEMONSTRATED, or MASTERED.")
+    evidence_type=payload.evidence_type.strip(); evidence_reference=payload.evidence_reference.strip()
+    if not evidence_type or not evidence_reference: raise HTTPException(422,"Mastery evidence type and reference must contain meaningful text.")
     with session() as db:
         learner=db.get(User,user_id); lesson=db.get(CurriculumLesson,lesson_id)
         if not learner: raise HTTPException(404,"Learner not found.")
@@ -422,7 +424,7 @@ def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,
             item=LearnerMastery(mastery_id=f"CP-MAST-{uuid.uuid4().hex[:12].upper()}",user_id=user_id,lesson_id=lesson_id,level=level)
             db.add(item)
         else: item.level=level
-        item.evidence_type=payload.evidence_type.strip(); item.evidence_reference=payload.evidence_reference.strip(); item.verified_by=user["user_id"]; item.verified_at=now
+        item.evidence_type=evidence_type; item.evidence_reference=evidence_reference; item.verified_by=user["user_id"]; item.verified_at=now
         db.add(AuditEvent(user_id=user["user_id"],action="LEARNER_MASTERY_UPDATED",category="CURRICULUM",resource_type="LEARNER_MASTERY",resource_id=item.mastery_id,result="SUCCESS",reason=(payload.note or "").strip() or f"{previous or 'NONE'} -> {level}"))
         db.commit(); db.refresh(item)
         return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_at":item.verified_at}}
