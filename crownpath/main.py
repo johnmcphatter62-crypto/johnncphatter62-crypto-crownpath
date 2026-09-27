@@ -21,7 +21,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
-from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit, CurriculumUnitLesson
+from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit, CurriculumUnitLesson, LearnerMastery
 from crownpath.curriculum_seed import seed_legacy_curriculum
 
 app=FastAPI(title="CrownPath",version="1.15.0-github")
@@ -68,6 +68,12 @@ class CurriculumDecisionRequest(BaseModel):
 class CurriculumVersionCreateRequest(BaseModel):
     content:dict
     note:str|None=Field(default=None,max_length=1000)
+
+class MasteryUpdateRequest(BaseModel):
+    level: str
+    evidence_type: str = Field(min_length=1,max_length=40)
+    evidence_reference: str = Field(min_length=1,max_length=120)
+    note: str | None = Field(default=None,max_length=500)
 
 def release_flag_enabled(name:str) -> bool:
     return os.getenv(name, "false").strip().lower() == "true"
@@ -392,6 +398,28 @@ def owner_seed_curriculum(user=Depends(require_permission("academy.manage"))):
     This action is idempotent and never approves or publishes curriculum.
     """
     return {"created": seed_legacy_curriculum(), "published": False}
+
+MASTERY_LEVELS = ("INTRODUCED","PRACTICED","DEMONSTRATED","MASTERED")
+
+@app.put("/api/owner/mastery/{user_id}/{lesson_id}")
+def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,user=Depends(require_permission("academy.manage"))):
+    level=payload.level.strip().upper()
+    if level not in MASTERY_LEVELS: raise HTTPException(422,"Mastery level must be INTRODUCED, PRACTICED, DEMONSTRATED, or MASTERED.")
+    with SessionLocal() as db:
+        learner=db.get(User,user_id); lesson=db.get(CurriculumLesson,lesson_id)
+        if not learner: raise HTTPException(404,"Learner not found.")
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        item=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==user_id,LearnerMastery.lesson_id==lesson_id))
+        now=datetime.now(timezone.utc)
+        previous=item.level if item else None
+        if item is None:
+            item=LearnerMastery(mastery_id=f"CP-MAST-{uuid.uuid4().hex[:12].upper()}",user_id=user_id,lesson_id=lesson_id,level=level)
+            db.add(item)
+        else: item.level=level
+        item.evidence_type=payload.evidence_type.strip(); item.evidence_reference=payload.evidence_reference.strip(); item.verified_by=user["user_id"]; item.verified_at=now
+        db.add(AuditEvent(user_id=user["user_id"],action="LEARNER_MASTERY_UPDATED",category="CURRICULUM",resource_type="LEARNER_MASTERY",resource_id=item.mastery_id,result="SUCCESS",reason=(payload.note or "").strip() or f"{previous or 'NONE'} -> {level}"))
+        db.commit(); db.refresh(item)
+        return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_at":item.verified_at}}
 
 @app.get("/api/owner/curriculum")
 def owner_curriculum(user=Depends(require_permission("academy.manage"))):
