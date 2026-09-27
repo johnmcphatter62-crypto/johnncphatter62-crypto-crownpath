@@ -90,5 +90,37 @@ class CurriculumPublishGateTest(unittest.TestCase):
         finally: db.close()
 
 
+    def test_new_version_is_draft_and_does_not_replace_active_version(self):
+        lesson_id="home-care-foundations"
+        db=session()
+        try:
+            lesson=db.get(CurriculumLesson,lesson_id)
+            original_active=lesson.active_version
+            source=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==original_active))
+            import json
+            content=json.loads(source.content_json)
+        finally: db.close()
+
+        created=self.client.post(f"/api/owner/curriculum/lessons/{lesson_id}/versions",json={"content":content,"note":"draft edit test"})
+        self.assertEqual(created.status_code,200,created.text)
+        data=created.json()
+        self.assertFalse(data["approved"])
+        self.assertFalse(data["published"])
+        self.assertEqual(data["active_version"],original_active)
+
+        db=session()
+        try:
+            lesson=db.get(CurriculumLesson,lesson_id)
+            draft=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==data["version"]))
+            self.assertEqual(lesson.active_version,original_active)
+            self.assertIsNotNone(draft)
+            self.assertFalse(draft.approved)
+            self.assertEqual(draft.source_type,"CROWNPATH_OWNER_EDIT")
+            action=db.scalar(select(AuditEvent.action).where(AuditEvent.user_id==self.user["user_id"],AuditEvent.action=="CURRICULUM_VERSION_CREATED"))
+            self.assertEqual(action,"CURRICULUM_VERSION_CREATED")
+            db.delete(draft); db.commit()
+        finally: db.close()
+
+
 if __name__=="__main__":
     unittest.main()
