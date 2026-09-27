@@ -401,6 +401,18 @@ def owner_seed_curriculum(user=Depends(require_permission("academy.manage"))):
 
 MASTERY_LEVELS = ("INTRODUCED","PRACTICED","DEMONSTRATED","MASTERED")
 
+@app.get("/api/owner/mastery/{user_id}/{lesson_id}")
+def owner_get_mastery(user_id:str,lesson_id:str,user=Depends(require_permission("academy.manage"))):
+    with session() as db:
+        learner=db.get(User,user_id)
+        if not learner: raise HTTPException(404,"Learner not found.")
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        item=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==user_id,LearnerMastery.lesson_id==lesson_id))
+        if not item: return {"mastery":None}
+        verifier=db.get(User,item.verified_by) if item.verified_by else None
+        return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_by_name":verifier.name if verifier else None,"verified_at":item.verified_at}}
+
 @app.put("/api/owner/mastery/{user_id}/{lesson_id}")
 def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,user=Depends(require_permission("academy.manage"))):
     level=payload.level.strip().upper()
