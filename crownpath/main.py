@@ -20,6 +20,8 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
+from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit
+from crownpath.curriculum_seed import seed_legacy_curriculum
 
 app=FastAPI(title="CrownPath",version="1.15.0-github")
 app.add_middleware(SecurityHeadersMiddleware)
@@ -375,6 +377,45 @@ def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(req
     try: updated=set_user_active(user_id,payload.active)
     except ValueError as exc: raise HTTPException(400,str(exc))
     return {"user":public_user(updated)}
+
+
+@app.post("/api/owner/curriculum/seed")
+def owner_seed_curriculum(user=Depends(require_permission("academy.manage"))):
+    """Import the legacy CrownPath catalog into the database hierarchy.
+
+    This action is idempotent and never approves or publishes curriculum.
+    """
+    return {"created": seed_legacy_curriculum(), "published": False}
+
+@app.get("/api/owner/curriculum")
+def owner_curriculum(user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        programs=db.scalars(select(CurriculumProgram).order_by(CurriculumProgram.title)).all()
+        result=[]
+        for program in programs:
+            courses=db.scalars(select(CurriculumCourse).where(CurriculumCourse.program_id==program.program_id).order_by(CurriculumCourse.sequence)).all()
+            course_items=[]
+            for course in courses:
+                units=db.scalars(select(CurriculumUnit).where(CurriculumUnit.course_id==course.course_id).order_by(CurriculumUnit.sequence)).all()
+                unit_items=[]
+                for unit in units:
+                    lessons=db.scalars(select(CurriculumLesson).where(CurriculumLesson.unit_id==unit.unit_id).order_by(CurriculumLesson.sequence)).all()
+                    unit_items.append({"unit_id":unit.unit_id,"title":unit.title,"sequence":unit.sequence,"lessons":[{"lesson_id":lesson.lesson_id,"title":lesson.title,"sequence":lesson.sequence,"status":lesson.status,"active_version":lesson.active_version} for lesson in lessons]})
+                course_items.append({"course_id":course.course_id,"title":course.title,"slug":course.slug,"status":course.status,"sequence":course.sequence,"units":unit_items})
+            result.append({"program_id":program.program_id,"title":program.title,"slug":program.slug,"status":program.status,"courses":course_items})
+        return {"programs":result}
+    finally: db.close()
+
+@app.get("/api/owner/curriculum/lessons/{lesson_id}/versions")
+def owner_curriculum_versions(lesson_id:str,user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        versions=db.scalars(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id).order_by(CurriculumLessonVersion.version.desc())).all()
+        return {"lesson":{"lesson_id":lesson.lesson_id,"title":lesson.title,"status":lesson.status,"active_version":lesson.active_version},"versions":[{"version_id":v.version_id,"version":v.version,"source_type":v.source_type,"approved":v.approved,"approved_by":v.approved_by,"approved_at":v.approved_at,"created_at":v.created_at} for v in versions]}
+    finally: db.close()
 
 @app.get("/api/avatar/startup/{role}")
 def avatar_startup(role:str):
