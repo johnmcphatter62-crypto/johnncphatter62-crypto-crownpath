@@ -158,6 +158,35 @@ class CurriculumPublishGateTest(unittest.TestCase):
                 db.commit()
             finally: db.close()
 
+    def test_owner_can_read_current_mastery_without_mutating_it(self):
+        learner=create_user("Lookup Learner",f"lookup-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        try:
+            empty=self.client.get(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations")
+            self.assertEqual(empty.status_code,200,empty.text)
+            self.assertIsNone(empty.json()["mastery"])
+            saved=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"DEMONSTRATED","evidence_type":"PRACTICAL","evidence_reference":"CP-LOOKUP-1"})
+            self.assertEqual(saved.status_code,200,saved.text)
+            before=saved.json()["mastery"]
+            found=self.client.get(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations")
+            self.assertEqual(found.status_code,200,found.text)
+            current=found.json()["mastery"]
+            self.assertEqual(current["mastery_id"],before["mastery_id"])
+            self.assertEqual(current["level"],"DEMONSTRATED")
+            self.assertEqual(current["evidence_reference"],"CP-LOOKUP-1")
+            self.assertEqual(current["verified_by"],self.user["user_id"])
+            self.assertTrue(current["verified_by_name"])
+            again=self.client.get(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations").json()["mastery"]
+            self.assertEqual(again["mastery_id"],current["mastery_id"])
+            self.assertEqual(again["verified_at"],current["verified_at"])
+        finally:
+            db=session()
+            try:
+                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
+
     def test_publish_requires_approval_and_audits_success(self):
         lesson_id="home-care-foundations"
         db=session()
