@@ -89,6 +89,25 @@ class CurriculumPublishGateTest(unittest.TestCase):
                 db.commit()
             finally: db.close()
 
+    def test_mastery_enforces_pathway_and_allows_shared_lessons(self):
+        learner=create_user("Pathway Learner",f"pathway-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        try:
+            own=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-PATH-OWN"})
+            self.assertEqual(own.status_code,200,own.text)
+            shared=self.client.put(f"/api/owner/mastery/{learner['user_id']}/wellness-client-experience",json={"level":"PRACTICED","evidence_type":"PROJECT","evidence_reference":"CP-PATH-SHARED"})
+            self.assertEqual(shared.status_code,200,shared.text)
+            blocked=self.client.put(f"/api/owner/mastery/{learner['user_id']}/barber-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-PATH-WRONG"})
+            self.assertEqual(blocked.status_code,409,blocked.text)
+            self.assertIn("not assigned",blocked.json()["detail"])
+        finally:
+            db=session()
+            try:
+                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
+
     def test_publish_requires_approval_and_audits_success(self):
         lesson_id="home-care-foundations"
         db=session()
