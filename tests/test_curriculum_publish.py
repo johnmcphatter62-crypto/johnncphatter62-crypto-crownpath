@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from crownpath.auth import create_access_token, create_user, set_user_role
-from crownpath.curriculum_models import CurriculumLesson, CurriculumLessonVersion
+from crownpath.curriculum_models import CurriculumLesson, CurriculumLessonVersion, LearnerMastery
 from crownpath.curriculum_seed import seed_legacy_curriculum
 from crownpath.database import init_db, session
 from crownpath.main import app
@@ -60,6 +60,34 @@ class CurriculumPublishGateTest(unittest.TestCase):
         finally:
             db.close()
         self.client.cookies.clear()
+
+    def test_mastery_update_requires_evidence_and_records_verifier_and_audit(self):
+        learner=create_user("Mastery Learner",f"mastery-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        try:
+            missing=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED"})
+            self.assertEqual(missing.status_code,422)
+            invalid=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"EXPERT","evidence_type":"ASSESSMENT","evidence_reference":"CP-EVIDENCE-1"})
+            self.assertEqual(invalid.status_code,422)
+            saved=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"DEMONSTRATED","evidence_type":"PRACTICAL","evidence_reference":"CP-EVIDENCE-2","note":"Instructor-reviewed practical"})
+            self.assertEqual(saved.status_code,200,saved.text)
+            mastery=saved.json()["mastery"]
+            self.assertEqual(mastery["level"],"DEMONSTRATED")
+            self.assertEqual(mastery["verified_by"],self.user["user_id"])
+            self.assertTrue(mastery["verified_at"])
+            db=session()
+            try:
+                audit=db.scalar(select(AuditEvent).where(AuditEvent.action=="LEARNER_MASTERY_UPDATED",AuditEvent.resource_id==mastery["mastery_id"]))
+                self.assertIsNotNone(audit)
+                self.assertEqual(audit.user_id,self.user["user_id"])
+            finally: db.close()
+        finally:
+            db=session()
+            try:
+                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
 
     def test_publish_requires_approval_and_audits_success(self):
         lesson_id="home-care-foundations"
