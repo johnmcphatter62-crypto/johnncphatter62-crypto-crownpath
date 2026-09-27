@@ -108,6 +108,36 @@ class CurriculumPublishGateTest(unittest.TestCase):
                 db.commit()
             finally: db.close()
 
+    def test_mastery_progression_allows_forward_and_same_level_but_blocks_downgrade(self):
+        learner=create_user("Progression Learner",f"progression-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        try:
+            first=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-PROG-1"})
+            self.assertEqual(first.status_code,200,first.text)
+            mastery_id=first.json()["mastery"]["mastery_id"]
+            refresh=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"PROJECT","evidence_reference":"CP-PROG-2"})
+            self.assertEqual(refresh.status_code,200,refresh.text)
+            self.assertEqual(refresh.json()["mastery"]["mastery_id"],mastery_id)
+            self.assertEqual(refresh.json()["mastery"]["evidence_reference"],"CP-PROG-2")
+            forward=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"DEMONSTRATED","evidence_type":"PRACTICAL","evidence_reference":"CP-PROG-3"})
+            self.assertEqual(forward.status_code,200,forward.text)
+            blocked=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"INTRODUCED","evidence_type":"ASSESSMENT","evidence_reference":"CP-PROG-4"})
+            self.assertEqual(blocked.status_code,409,blocked.text)
+            self.assertIn("cannot be downgraded",blocked.json()["detail"])
+            db=session()
+            try:
+                saved=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==learner["user_id"],LearnerMastery.lesson_id=="home-care-foundations"))
+                self.assertEqual(saved.level,"DEMONSTRATED")
+                self.assertEqual(saved.evidence_reference,"CP-PROG-3")
+            finally: db.close()
+        finally:
+            db=session()
+            try:
+                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
+
     def test_publish_requires_approval_and_audits_success(self):
         lesson_id="home-care-foundations"
         db=session()
