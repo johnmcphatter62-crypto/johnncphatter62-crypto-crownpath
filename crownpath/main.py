@@ -448,6 +448,22 @@ def owner_create_curriculum_version(lesson_id:str,payload:CurriculumVersionCreat
         return {"lesson_id":lesson_id,"version":next_version,"approved":False,"published":False,"active_version":lesson.active_version}
     finally: db.close()
 
+@app.put("/api/owner/curriculum/lessons/{lesson_id}/versions/{version}")
+def owner_update_curriculum_draft(lesson_id:str,version:int,payload:CurriculumVersionCreateRequest,user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        item=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==version))
+        if not item: raise HTTPException(404,"Curriculum lesson version not found.")
+        if item.approved: raise HTTPException(409,"Approved curriculum versions are immutable. Create a new draft to make changes.")
+        if lesson.status=="PUBLISHED" and lesson.active_version==version: raise HTTPException(409,"The active published version cannot be edited. Create a new draft.")
+        item.content_json=json.dumps(payload.content); item.source_type="CROWNPATH_OWNER_EDIT"
+        record_curriculum_audit(db,user["user_id"],"CURRICULUM_VERSION_UPDATED",lesson_id,"SUCCESS",(payload.note or "").strip() or None)
+        db.commit()
+        return {"lesson_id":lesson_id,"version":version,"saved":True,"approved":False,"active_version":lesson.active_version}
+    finally: db.close()
+
 @app.get("/api/owner/curriculum/lessons/{lesson_id}/versions/{version}/content")
 def owner_curriculum_version_content(lesson_id:str,version:int,user=Depends(require_permission("academy.manage"))):
     db=session()
