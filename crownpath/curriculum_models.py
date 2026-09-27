@@ -57,6 +57,17 @@ class CurriculumLesson(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
 
 
+class CurriculumUnitLesson(Base):
+    """Places one canonical lesson in one or more curriculum units."""
+    __tablename__ = "curriculum_unit_lessons"
+    __table_args__ = (UniqueConstraint("unit_id", "lesson_id", name="uq_curriculum_unit_lesson"),)
+    assignment_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    unit_id: Mapped[str] = mapped_column(String(64), ForeignKey("curriculum_units.unit_id"), nullable=False, index=True)
+    lesson_id: Mapped[str] = mapped_column(String(100), ForeignKey("curriculum_lessons.lesson_id"), nullable=False, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class CurriculumLessonVersion(Base):
     __tablename__ = "curriculum_lesson_versions"
     __table_args__ = (UniqueConstraint("lesson_id", "version", name="uq_curriculum_lesson_version"),)
