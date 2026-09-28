@@ -83,7 +83,7 @@ class CurriculumPublishGateTest(unittest.TestCase):
         finally:
             db=session()
             try:
-                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)\n                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.commit()
@@ -102,7 +102,7 @@ class CurriculumPublishGateTest(unittest.TestCase):
         finally:
             db=session()
             try:
-                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)\n                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.commit()
@@ -132,7 +132,7 @@ class CurriculumPublishGateTest(unittest.TestCase):
         finally:
             db=session()
             try:
-                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)\n                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.commit()
@@ -181,7 +181,7 @@ class CurriculumPublishGateTest(unittest.TestCase):
         finally:
             db=session()
             try:
-                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)\n                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.commit()
@@ -310,7 +310,7 @@ class CurriculumPublishGateTest(unittest.TestCase):
             db=session()
             try:
                 db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)
-                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)\n                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
                 db.commit()
