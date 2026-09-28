@@ -7,7 +7,7 @@ os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-curriculum
 
 from sqlalchemy import delete, select
 
-from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit
+from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit, CurriculumUnitLesson
 from crownpath.curriculum_seed import CATALOGS, seed_legacy_curriculum
 from crownpath.database import init_db, session
 
@@ -21,7 +21,7 @@ class CurriculumSeedTest(unittest.TestCase):
         first = seed_legacy_curriculum()
         second = seed_legacy_curriculum()
         self.assertGreaterEqual(first["programs"], 0)
-        self.assertEqual(second, {"programs": 0, "courses": 0, "units": 0, "lessons": 0, "versions": 0})
+        self.assertEqual(second, {"programs": 0, "courses": 0, "units": 0, "lessons": 0, "assignments": 0, "versions": 0})
 
         db = session()
         try:
@@ -43,6 +43,22 @@ class CurriculumSeedTest(unittest.TestCase):
                     self.assertIsNotNone(version)
                     self.assertTrue(version.content_json)
                     self.assertFalse(version.approved)
+                    assignment = db.scalar(select(CurriculumUnitLesson).where(
+                        CurriculumUnitLesson.unit_id == unit.unit_id,
+                        CurriculumUnitLesson.lesson_id == lesson_id,
+                    ))
+                    self.assertIsNotNone(assignment)
+
+            shared_counts = {
+                "wellness-client-experience": 3,
+                "avatar-bot-builder-foundations": 3,
+                "wellness-fitness-foundations": 2,
+            }
+            for lesson_id, expected in shared_counts.items():
+                assignments = db.scalars(select(CurriculumUnitLesson).where(
+                    CurriculumUnitLesson.lesson_id == lesson_id
+                )).all()
+                self.assertEqual(len(assignments), expected)
         finally:
             db.close()
 

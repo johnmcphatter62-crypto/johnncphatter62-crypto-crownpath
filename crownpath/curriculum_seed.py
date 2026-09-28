@@ -14,6 +14,7 @@ from crownpath.curriculum_models import (
     CurriculumLessonVersion,
     CurriculumProgram,
     CurriculumUnit,
+    CurriculumUnitLesson,
 )
 from crownpath.database import session
 from crownpath.lesson_content import get_canonical_lesson_content
@@ -66,7 +67,7 @@ def _id(prefix):
 
 def seed_legacy_curriculum():
     db = session()
-    counts = {"programs": 0, "courses": 0, "units": 0, "lessons": 0, "versions": 0}
+    counts = {"programs": 0, "courses": 0, "units": 0, "lessons": 0, "assignments": 0, "versions": 0}
     try:
         for track, lessons in CATALOGS.items():
             slug = track.lower().replace("_", "-")
@@ -109,6 +110,17 @@ def seed_legacy_curriculum():
                         sequence=sequence, active_version=1, status="DRAFT",
                     )
                     db.add(lesson); db.flush(); counts["lessons"] += 1
+
+                assignment = db.scalar(select(CurriculumUnitLesson).where(
+                    CurriculumUnitLesson.unit_id == unit.unit_id,
+                    CurriculumUnitLesson.lesson_id == lesson_id,
+                ))
+                if not assignment:
+                    db.add(CurriculumUnitLesson(
+                        assignment_id=_id("CP-ULA"), unit_id=unit.unit_id,
+                        lesson_id=lesson_id, sequence=sequence, required=True,
+                    ))
+                    db.flush(); counts["assignments"] += 1
 
                 version = db.scalar(select(CurriculumLessonVersion).where(
                     CurriculumLessonVersion.lesson_id == lesson_id,

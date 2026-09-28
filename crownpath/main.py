@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -20,7 +21,7 @@ from crownpath.security_headers import SecurityHeadersMiddleware
 from crownpath.audio_service import seed_audio_stations, seed_audio_zones, list_audio_stations, list_audio_zones
 from crownpath.playback_controller import seed_devices, list_devices, playback_state
 from crownpath.lesson_content import get_lesson_content
-from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit
+from crownpath.curriculum_models import CurriculumCourse, CurriculumLesson, CurriculumLessonVersion, CurriculumProgram, CurriculumUnit, CurriculumUnitLesson, LearnerMastery, LearnerMasteryEvidence
 from crownpath.curriculum_seed import seed_legacy_curriculum
 
 app=FastAPI(title="CrownPath",version="1.15.0-github")
@@ -64,6 +65,15 @@ class InstructorReviewRequest(BaseModel):
     note:str|None=Field(default=None,max_length=1000)
 class CurriculumDecisionRequest(BaseModel):
     note:str|None=Field(default=None,max_length=1000)
+class CurriculumVersionCreateRequest(BaseModel):
+    content:dict
+    note:str|None=Field(default=None,max_length=1000)
+
+class MasteryUpdateRequest(BaseModel):
+    level: str
+    evidence_type: str = Field(min_length=1,max_length=40)
+    evidence_reference: str = Field(min_length=1,max_length=120)
+    note: str | None = Field(default=None,max_length=500)
 
 def release_flag_enabled(name:str) -> bool:
     return os.getenv(name, "false").strip().lower() == "true"
@@ -389,6 +399,56 @@ def owner_seed_curriculum(user=Depends(require_permission("academy.manage"))):
     """
     return {"created": seed_legacy_curriculum(), "published": False}
 
+MASTERY_LEVELS = ("INTRODUCED","PRACTICED","DEMONSTRATED","MASTERED")
+
+@app.get("/api/owner/mastery/{user_id}/{lesson_id}")
+def owner_get_mastery(user_id:str,lesson_id:str,user=Depends(require_permission("academy.manage"))):
+    with session() as db:
+        learner=db.get(User,user_id)
+        if not learner: raise HTTPException(404,"Learner not found.")
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        item=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==user_id,LearnerMastery.lesson_id==lesson_id))
+        if not item: return {"mastery":None,"history":[]}
+        verifier=db.get(User,item.verified_by) if item.verified_by else None
+        evidence_rows=db.scalars(select(LearnerMasteryEvidence).where(LearnerMasteryEvidence.mastery_id==item.mastery_id).order_by(LearnerMasteryEvidence.verified_at.desc(),LearnerMasteryEvidence.evidence_id.desc())).all()
+        history=[]
+        for evidence in evidence_rows:
+            evidence_verifier=db.get(User,evidence.verified_by) if evidence.verified_by else None
+            history.append({"evidence_id":evidence.evidence_id,"mastery_id":evidence.mastery_id,"level":evidence.level,"evidence_type":evidence.evidence_type,"evidence_reference":evidence.evidence_reference,"note":evidence.note,"verified_by":evidence.verified_by,"verified_by_name":evidence_verifier.name if evidence_verifier else None,"verified_at":evidence.verified_at})
+        return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_by_name":verifier.name if verifier else None,"verified_at":item.verified_at},"history":history}
+
+@app.put("/api/owner/mastery/{user_id}/{lesson_id}")
+def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,user=Depends(require_permission("academy.manage"))):
+    level=payload.level.strip().upper()
+    if level not in MASTERY_LEVELS: raise HTTPException(422,"Mastery level must be INTRODUCED, PRACTICED, DEMONSTRATED, or MASTERED.")
+    evidence_type=payload.evidence_type.strip(); evidence_reference=payload.evidence_reference.strip()
+    if not evidence_type or not evidence_reference: raise HTTPException(422,"Mastery evidence type and reference must contain meaningful text.")
+    with session() as db:
+        learner=db.get(User,user_id); lesson=db.get(CurriculumLesson,lesson_id)
+        if not learner: raise HTTPException(404,"Learner not found.")
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        if not learner.active: raise HTTPException(409,"Mastery cannot be recorded for an inactive learner account.")
+        if learner.role not in ("HOME_CARE","BARBER","COSMETOLOGY_PRO"):
+            raise HTTPException(409,"Mastery can only be recorded for CrownPath learner pathways.")
+        program_slug=learner.role.lower().replace("_","-")
+        allowed=db.scalar(select(CurriculumUnitLesson.assignment_id).join(CurriculumUnit,CurriculumUnitLesson.unit_id==CurriculumUnit.unit_id).join(CurriculumCourse,CurriculumUnit.course_id==CurriculumCourse.course_id).join(CurriculumProgram,CurriculumCourse.program_id==CurriculumProgram.program_id).where(CurriculumProgram.slug==program_slug,CurriculumUnitLesson.lesson_id==lesson_id))
+        if not allowed: raise HTTPException(409,"This lesson is not assigned to the learner's CrownPath pathway.")
+        item=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==user_id,LearnerMastery.lesson_id==lesson_id))
+        if item and MASTERY_LEVELS.index(level) < MASTERY_LEVELS.index(item.level): raise HTTPException(409,"Mastery cannot be downgraded through verification. Use a correction workflow.")
+        now=datetime.now(timezone.utc)
+        previous=item.level if item else None
+        if item is None:
+            item=LearnerMastery(mastery_id=f"CP-MAST-{uuid.uuid4().hex[:12].upper()}",user_id=user_id,lesson_id=lesson_id,level=level)
+            db.add(item)
+        else: item.level=level
+        item.evidence_type=evidence_type; item.evidence_reference=evidence_reference; item.verified_by=user["user_id"]; item.verified_at=now
+        db.flush()
+        db.add(LearnerMasteryEvidence(evidence_id=f"CP-ME-{uuid.uuid4().hex[:12].upper()}",mastery_id=item.mastery_id,user_id=user_id,lesson_id=lesson_id,level=level,evidence_type=evidence_type,evidence_reference=evidence_reference,note=(payload.note or "").strip() or None,verified_by=user["user_id"],verified_at=now))
+        db.add(AuditEvent(user_id=user["user_id"],action="LEARNER_MASTERY_UPDATED",category="CURRICULUM",resource_type="LEARNER_MASTERY",resource_id=item.mastery_id,result="SUCCESS",reason=(payload.note or "").strip() or f"{previous or 'NONE'} -> {level}"))
+        db.commit(); db.refresh(item)
+        return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_at":item.verified_at}}
+
 @app.get("/api/owner/curriculum")
 def owner_curriculum(user=Depends(require_permission("academy.manage"))):
     db=session()
@@ -402,8 +462,13 @@ def owner_curriculum(user=Depends(require_permission("academy.manage"))):
                 units=db.scalars(select(CurriculumUnit).where(CurriculumUnit.course_id==course.course_id).order_by(CurriculumUnit.sequence)).all()
                 unit_items=[]
                 for unit in units:
-                    lessons=db.scalars(select(CurriculumLesson).where(CurriculumLesson.unit_id==unit.unit_id).order_by(CurriculumLesson.sequence)).all()
-                    unit_items.append({"unit_id":unit.unit_id,"title":unit.title,"sequence":unit.sequence,"lessons":[{"lesson_id":lesson.lesson_id,"title":lesson.title,"sequence":lesson.sequence,"status":lesson.status,"active_version":lesson.active_version} for lesson in lessons]})
+                    assignments=db.scalars(select(CurriculumUnitLesson).where(CurriculumUnitLesson.unit_id==unit.unit_id).order_by(CurriculumUnitLesson.sequence)).all()
+                    lesson_items=[]
+                    for assignment in assignments:
+                        lesson=db.get(CurriculumLesson,assignment.lesson_id)
+                        if lesson:
+                            lesson_items.append({"lesson_id":lesson.lesson_id,"title":lesson.title,"sequence":assignment.sequence,"required":assignment.required,"status":lesson.status,"active_version":lesson.active_version})
+                    unit_items.append({"unit_id":unit.unit_id,"title":unit.title,"sequence":unit.sequence,"lessons":lesson_items})
                 course_items.append({"course_id":course.course_id,"title":course.title,"slug":course.slug,"status":course.status,"sequence":course.sequence,"units":unit_items})
             result.append({"program_id":program.program_id,"title":program.title,"slug":program.slug,"status":program.status,"courses":course_items})
         return {"programs":result}
@@ -419,6 +484,50 @@ def owner_curriculum_versions(lesson_id:str,user=Depends(require_permission("aca
         return {"lesson":{"lesson_id":lesson.lesson_id,"title":lesson.title,"status":lesson.status,"active_version":lesson.active_version},"versions":[{"version_id":v.version_id,"version":v.version,"source_type":v.source_type,"approved":v.approved,"approved_by":v.approved_by,"approved_at":v.approved_at,"created_at":v.created_at} for v in versions]}
     finally: db.close()
 
+
+@app.post("/api/owner/curriculum/lessons/{lesson_id}/versions")
+def owner_create_curriculum_version(lesson_id:str,payload:CurriculumVersionCreateRequest,user=Depends(require_permission("academy.manage"))):
+    """Create a new unapproved draft without changing the active version."""
+    db=session()
+    try:
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        versions=db.scalars(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id).order_by(CurriculumLessonVersion.version.desc())).all()
+        next_version=(versions[0].version if versions else 0)+1
+        item=CurriculumLessonVersion(
+            version_id=f"CP-LV-{uuid.uuid4().hex[:12].upper()}",lesson_id=lesson_id,version=next_version,
+            content_json=json.dumps(payload.content),source_type="CROWNPATH_OWNER_EDIT",approved=False,
+        )
+        db.add(item)
+        record_curriculum_audit(db,user["user_id"],"CURRICULUM_VERSION_CREATED",lesson_id,"SUCCESS",(payload.note or "").strip() or None)
+        db.commit()
+        return {"lesson_id":lesson_id,"version":next_version,"approved":False,"published":False,"active_version":lesson.active_version}
+    finally: db.close()
+
+@app.put("/api/owner/curriculum/lessons/{lesson_id}/versions/{version}")
+def owner_update_curriculum_draft(lesson_id:str,version:int,payload:CurriculumVersionCreateRequest,user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        lesson=db.get(CurriculumLesson,lesson_id)
+        if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        item=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==version))
+        if not item: raise HTTPException(404,"Curriculum lesson version not found.")
+        if item.approved: raise HTTPException(409,"Approved curriculum versions are immutable. Create a new draft to make changes.")
+        if lesson.status=="PUBLISHED" and lesson.active_version==version: raise HTTPException(409,"The active published version cannot be edited. Create a new draft.")
+        item.content_json=json.dumps(payload.content); item.source_type="CROWNPATH_OWNER_EDIT"
+        record_curriculum_audit(db,user["user_id"],"CURRICULUM_VERSION_UPDATED",lesson_id,"SUCCESS",(payload.note or "").strip() or None)
+        db.commit()
+        return {"lesson_id":lesson_id,"version":version,"saved":True,"approved":False,"active_version":lesson.active_version}
+    finally: db.close()
+
+@app.get("/api/owner/curriculum/lessons/{lesson_id}/versions/{version}/content")
+def owner_curriculum_version_content(lesson_id:str,version:int,user=Depends(require_permission("academy.manage"))):
+    db=session()
+    try:
+        item=db.scalar(select(CurriculumLessonVersion).where(CurriculumLessonVersion.lesson_id==lesson_id,CurriculumLessonVersion.version==version))
+        if not item: raise HTTPException(404,"Curriculum lesson version not found.")
+        return {"lesson_id":lesson_id,"version":version,"content":json.loads(item.content_json)}
+    finally: db.close()
 
 def record_curriculum_audit(db,user_id:str,action:str,lesson_id:str,result:str,reason:str|None=None):
     db.add(AuditEvent(user_id=user_id,action=action,category="CURRICULUM",resource_type="LESSON",resource_id=lesson_id,result=result,reason=reason))

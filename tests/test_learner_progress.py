@@ -154,6 +154,24 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
                     self.assertEqual(canonical["steps"], learner["steps"])
                     self.assert_learner_safe(learner)
 
+    def test_structured_assessment_answer_fields_are_removed_recursively(self):
+        from crownpath.lesson_content import _sanitize_for_learner
+        canonical = {
+            "summary": "Assessment safety regression",
+            "assessments": [
+                {"type": "short_answer", "prompt": "Learner prompt", "answer_key": "private answer", "rationale": "private rationale", "instructor_notes": "private note", "instructor_review": True},
+                {"type": "multiple_choice", "prompt": "Choose one", "correct_answer": "B", "instructor_answer_key": {"choice": "B"}},
+            ],
+        }
+        learner = _sanitize_for_learner(canonical)
+        self.assertEqual(learner["assessments"][0]["prompt"], "Learner prompt")
+        self.assertTrue(learner["assessments"][0]["instructor_review"])
+        self.assertFalse(FORBIDDEN_LEARNER_KEYS.intersection(collect_keys(learner)))
+        serialized = str(learner)
+        self.assertNotIn("private answer", serialized)
+        self.assertNotIn("private rationale", serialized)
+        self.assertNotIn("private note", serialized)
+
     def test_canonical_quiz_keys_remain_server_side_but_not_in_learner_content(self):
         lesson_ids = [
             "home-care-foundations",
