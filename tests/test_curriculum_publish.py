@@ -167,6 +167,7 @@ class CurriculumPublishGateTest(unittest.TestCase):
             empty=self.client.get(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations")
             self.assertEqual(empty.status_code,200,empty.text)
             self.assertIsNone(empty.json()["mastery"])
+            self.assertEqual(empty.json()["history"],[])
             saved=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"DEMONSTRATED","evidence_type":"PRACTICAL","evidence_reference":"CP-LOOKUP-1"})
             self.assertEqual(saved.status_code,200,saved.text)
             before=saved.json()["mastery"]
@@ -178,9 +179,24 @@ class CurriculumPublishGateTest(unittest.TestCase):
             self.assertEqual(current["evidence_reference"],"CP-LOOKUP-1")
             self.assertEqual(current["verified_by"],self.user["user_id"])
             self.assertTrue(current["verified_by_name"])
-            again=self.client.get(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations").json()["mastery"]
+            first_history=found.json()["history"]
+            self.assertEqual(len(first_history),1)
+            self.assertEqual(first_history[0]["level"],"DEMONSTRATED")
+            self.assertEqual(first_history[0]["evidence_reference"],"CP-LOOKUP-1")
+            refreshed=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"MASTERED","evidence_type":"PORTFOLIO","evidence_reference":"CP-LOOKUP-2","note":"final verification"})
+            self.assertEqual(refreshed.status_code,200,refreshed.text)
+            after=self.client.get(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations")
+            self.assertEqual(after.status_code,200,after.text)
+            history=after.json()["history"]
+            self.assertEqual(len(history),2)
+            self.assertEqual([row["evidence_reference"] for row in history],["CP-LOOKUP-2","CP-LOOKUP-1"])
+            self.assertEqual(history[0]["note"],"final verification")
+            evidence_ids=[row["evidence_id"] for row in history]
+            again_response=self.client.get(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations").json()
+            again=again_response["mastery"]
             self.assertEqual(again["mastery_id"],current["mastery_id"])
-            self.assertEqual(again["verified_at"],current["verified_at"])
+            self.assertEqual(again["level"],"MASTERED")
+            self.assertEqual([row["evidence_id"] for row in again_response["history"]],evidence_ids)
         finally:
             db=session()
             try:
