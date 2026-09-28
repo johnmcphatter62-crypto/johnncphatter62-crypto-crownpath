@@ -8,6 +8,10 @@ os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-learner-te
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
+os.environ.setdefault("CROWNPATH_LEARNER_ACCESS_APPROVED", "true")
+os.environ.setdefault("CROWNPATH_LEARNER_ENROLLMENT_APPROVED", "true")
+os.environ.setdefault("CROWNPATH_INSTRUCTOR_ACCESS_APPROVED", "true")
+
 from crownpath.auth import create_user, set_user_role
 from crownpath.database import init_db, session
 from crownpath.lesson_content import get_canonical_lesson_content, get_lesson_content
