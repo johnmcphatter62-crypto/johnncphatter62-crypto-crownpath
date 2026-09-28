@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from crownpath.auth import create_access_token, create_user, set_user_role
-from crownpath.curriculum_models import CurriculumLesson, CurriculumLessonVersion, LearnerMastery
+from crownpath.curriculum_models import CurriculumLesson, CurriculumLessonVersion, LearnerMastery, LearnerMasteryEvidence
 from crownpath.curriculum_seed import seed_legacy_curriculum
 from crownpath.database import init_db, session
 from crownpath.main import app
@@ -279,6 +279,42 @@ class CurriculumPublishGateTest(unittest.TestCase):
             self.assertIn("CURRICULUM_VERSION_UPDATED",actions)
             db.delete(draft); db.commit()
         finally: db.close()
+
+    def test_mastery_evidence_history_appends_only_successful_verifications(self):
+        learner=create_user("Evidence History Learner",f"evidence-history-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        lesson_id="home-care-foundations"
+        try:
+            first=self.client.put(f"/api/owner/mastery/{learner['user_id']}/{lesson_id}",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-HIST-1","note":"first evidence"})
+            self.assertEqual(first.status_code,200,first.text)
+            refresh=self.client.put(f"/api/owner/mastery/{learner['user_id']}/{lesson_id}",json={"level":"PRACTICED","evidence_type":"PROJECT","evidence_reference":"CP-HIST-2","note":"same level new evidence"})
+            self.assertEqual(refresh.status_code,200,refresh.text)
+            advanced=self.client.put(f"/api/owner/mastery/{learner['user_id']}/{lesson_id}",json={"level":"DEMONSTRATED","evidence_type":"PRACTICAL","evidence_reference":"CP-HIST-3","note":"forward progression"})
+            self.assertEqual(advanced.status_code,200,advanced.text)
+            db=session()
+            try:
+                rows=db.scalars(select(LearnerMasteryEvidence).where(LearnerMasteryEvidence.user_id==learner["user_id"],LearnerMasteryEvidence.lesson_id==lesson_id).order_by(LearnerMasteryEvidence.verified_at,LearnerMasteryEvidence.evidence_id)).all()
+                self.assertEqual(len(rows),3)
+                self.assertEqual([row.level for row in rows],["PRACTICED","PRACTICED","DEMONSTRATED"])
+                self.assertEqual([row.evidence_reference for row in rows],["CP-HIST-1","CP-HIST-2","CP-HIST-3"])
+                mastery_id=rows[0].mastery_id
+                self.assertTrue(all(row.mastery_id==mastery_id for row in rows))
+            finally: db.close()
+            rejected=self.client.put(f"/api/owner/mastery/{learner['user_id']}/{lesson_id}",json={"level":"INTRODUCED","evidence_type":"ASSESSMENT","evidence_reference":"CP-HIST-REJECT"})
+            self.assertEqual(rejected.status_code,409)
+            db=session()
+            try:
+                count=len(db.scalars(select(LearnerMasteryEvidence).where(LearnerMasteryEvidence.user_id==learner["user_id"],LearnerMasteryEvidence.lesson_id==lesson_id)).all())
+                self.assertEqual(count,3)
+            finally: db.close()
+        finally:
+            db=session()
+            try:
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
 
     def test_active_published_version_rejects_edit(self):
         lesson_id="home-care-foundations"
