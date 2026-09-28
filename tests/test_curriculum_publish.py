@@ -6,7 +6,7 @@ os.environ.setdefault("CROWNPATH_ENV", "staging")
 os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-curriculum-publish-tests-123456789")
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from crownpath.auth import create_access_token, create_user, set_user_role
 from crownpath.curriculum_models import CurriculumLesson, CurriculumLessonVersion, LearnerMastery, LearnerMasteryEvidence
