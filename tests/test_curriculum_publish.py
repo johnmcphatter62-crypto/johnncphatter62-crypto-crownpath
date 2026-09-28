@@ -207,6 +207,34 @@ class CurriculumPublishGateTest(unittest.TestCase):
                 db.commit()
             finally: db.close()
 
+    def test_instructor_cannot_use_owner_mastery_verification_api(self):
+        learner=create_user("Authorization Learner",f"authz-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        instructor=create_user("Authorization Instructor",f"authz-instructor-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Instructor-Test-2026!","HOME_CARE")
+        set_user_role(instructor["user_id"],"INSTRUCTOR")
+        instructor_token=create_access_token(instructor["user_id"])
+        owner_token=self.client.cookies.get("crownpath_session")
+        try:
+            self.client.cookies.set("crownpath_session",instructor_token)
+            response=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-AUTHZ-REJECT"})
+            self.assertEqual(response.status_code,403,response.text)
+            db=session()
+            try:
+                self.assertIsNone(db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==learner["user_id"],LearnerMastery.lesson_id=="home-care-foundations")))
+                self.assertEqual(db.scalar(select(func.count()).select_from(LearnerMasteryEvidence).where(LearnerMasteryEvidence.user_id==learner["user_id"])),0)
+            finally: db.close()
+        finally:
+            if owner_token:self.client.cookies.set("crownpath_session",owner_token)
+            else:self.client.cookies.delete("crownpath_session")
+            db=session()
+            try:
+                ids=[learner["user_id"],instructor["user_id"]]
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id.in_(ids)).delete(synchronize_session=False)
+                db.query(LearnerMastery).filter(LearnerMastery.user_id.in_(ids)).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id.in_(ids)).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id.in_(ids)).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
+
     def test_mastery_rejects_missing_learner_missing_lesson_and_nonlearner_role(self):
         missing_learner=self.client.put("/api/owner/mastery/CP-USER-DOES-NOT-EXIST/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-MISSING-LEARNER"})
         self.assertEqual(missing_learner.status_code,404,missing_learner.text)
