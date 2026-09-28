@@ -207,6 +207,30 @@ class CurriculumPublishGateTest(unittest.TestCase):
                 db.commit()
             finally: db.close()
 
+    def test_mastery_rejects_inactive_learner_without_evidence_history(self):
+        learner=create_user("Inactive Mastery Learner",f"inactive-mastery-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        db=session()
+        try:
+            account=db.get(User,learner["user_id"]); account.active=False; db.commit()
+        finally: db.close()
+        try:
+            response=self.client.put(f"/api/owner/mastery/{learner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-INACTIVE-REJECT"})
+            self.assertEqual(response.status_code,409,response.text)
+            db=session()
+            try:
+                self.assertIsNone(db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==learner["user_id"],LearnerMastery.lesson_id=="home-care-foundations")))
+                self.assertEqual(db.scalar(select(func.count()).select_from(LearnerMasteryEvidence).where(LearnerMasteryEvidence.user_id==learner["user_id"])),0)
+            finally: db.close()
+        finally:
+            db=session()
+            try:
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(LearnerMastery).filter(LearnerMastery.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id==learner["user_id"]).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
+
     def test_publish_requires_approval_and_audits_success(self):
         lesson_id="home-care-foundations"
         db=session()
