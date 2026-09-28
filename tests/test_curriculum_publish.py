@@ -213,7 +213,8 @@ class CurriculumPublishGateTest(unittest.TestCase):
         self.assertEqual(missing_learner.json()["detail"],"Learner not found.")
 
         learner=create_user("Boundary Learner",f"boundary-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
-        nonlearner=create_user("Boundary Instructor",f"boundary-instructor-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Instructor-Test-2026!","INSTRUCTOR")
+        nonlearner=create_user("Boundary Instructor",f"boundary-instructor-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Instructor-Test-2026!","HOME_CARE")
+        set_user_role(nonlearner["user_id"],"INSTRUCTOR")
         try:
             missing_lesson=self.client.put(f"/api/owner/mastery/{learner['user_id']}/lesson-does-not-exist",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-MISSING-LESSON"})
             self.assertEqual(missing_lesson.status_code,404,missing_lesson.text)
