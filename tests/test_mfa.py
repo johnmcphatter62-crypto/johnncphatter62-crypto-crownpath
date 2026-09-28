@@ -7,6 +7,9 @@ import pyotp
 
 os.environ.setdefault("CROWNPATH_ENV", "staging")
 os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-mfa-tests-123456789")
+os.environ.setdefault("CROWNPATH_LEARNER_ACCESS_APPROVED", "true")
+os.environ.setdefault("CROWNPATH_LEARNER_ENROLLMENT_APPROVED", "true")
+os.environ.setdefault("CROWNPATH_INSTRUCTOR_ACCESS_APPROVED", "true")
 
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
