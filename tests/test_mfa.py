@@ -11,6 +11,10 @@ os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-mfa-tests-
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
+os.environ.setdefault("CROWNPATH_LEARNER_ACCESS_APPROVED", "true")
+os.environ.setdefault("CROWNPATH_LEARNER_ENROLLMENT_APPROVED", "true")
+os.environ.setdefault("CROWNPATH_INSTRUCTOR_ACCESS_APPROVED", "true")
+
 from crownpath.auth import _hash_mfa_recovery_code, consume_mfa_recovery_code, create_user
 from crownpath.database import init_db, session
 from crownpath.main import app
