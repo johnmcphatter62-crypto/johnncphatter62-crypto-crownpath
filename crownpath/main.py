@@ -409,9 +409,14 @@ def owner_get_mastery(user_id:str,lesson_id:str,user=Depends(require_permission(
         lesson=db.get(CurriculumLesson,lesson_id)
         if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
         item=db.scalar(select(LearnerMastery).where(LearnerMastery.user_id==user_id,LearnerMastery.lesson_id==lesson_id))
-        if not item: return {"mastery":None}
+        if not item: return {"mastery":None,"history":[]}
         verifier=db.get(User,item.verified_by) if item.verified_by else None
-        return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_by_name":verifier.name if verifier else None,"verified_at":item.verified_at}}
+        evidence_rows=db.scalars(select(LearnerMasteryEvidence).where(LearnerMasteryEvidence.mastery_id==item.mastery_id).order_by(LearnerMasteryEvidence.verified_at.desc(),LearnerMasteryEvidence.evidence_id.desc())).all()
+        history=[]
+        for evidence in evidence_rows:
+            evidence_verifier=db.get(User,evidence.verified_by) if evidence.verified_by else None
+            history.append({"evidence_id":evidence.evidence_id,"mastery_id":evidence.mastery_id,"level":evidence.level,"evidence_type":evidence.evidence_type,"evidence_reference":evidence.evidence_reference,"note":evidence.note,"verified_by":evidence.verified_by,"verified_by_name":evidence_verifier.name if evidence_verifier else None,"verified_at":evidence.verified_at})
+        return {"mastery":{"mastery_id":item.mastery_id,"user_id":item.user_id,"lesson_id":item.lesson_id,"level":item.level,"evidence_type":item.evidence_type,"evidence_reference":item.evidence_reference,"verified_by":item.verified_by,"verified_by_name":verifier.name if verifier else None,"verified_at":item.verified_at},"history":history}
 
 @app.put("/api/owner/mastery/{user_id}/{lesson_id}")
 def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,user=Depends(require_permission("academy.manage"))):
