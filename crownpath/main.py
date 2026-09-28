@@ -428,6 +428,7 @@ def owner_update_mastery(user_id:str,lesson_id:str,payload:MasteryUpdateRequest,
         learner=db.get(User,user_id); lesson=db.get(CurriculumLesson,lesson_id)
         if not learner: raise HTTPException(404,"Learner not found.")
         if not lesson: raise HTTPException(404,"Curriculum lesson not found.")
+        if not learner.active: raise HTTPException(409,"Mastery cannot be recorded for an inactive learner account.")
         if learner.role not in ("HOME_CARE","BARBER","COSMETOLOGY_PRO"):
             raise HTTPException(409,"Mastery can only be recorded for CrownPath learner pathways.")
         program_slug=learner.role.lower().replace("_","-")
