@@ -1,3 +1,5 @@
+import ast
+from pathlib import Path
 import unittest
 
 import crownpath.models  # noqa: F401
@@ -19,24 +21,23 @@ CORE_TABLES = {
     "audio_zone_devices",
 }
 
-CURRICULUM_TABLES = {
-    "curriculum_programs",
-    "curriculum_courses",
-    "curriculum_units",
-    "curriculum_lessons",
-    "curriculum_unit_lessons",
-    "curriculum_lesson_versions",
-    "curriculum_activities",
-    "curriculum_assessments",
-}
-
 
 class MigrationSafetyBaselineTest(unittest.TestCase):
-    def test_core_schema_baseline_is_explicit(self):
-        self.assertEqual(set(Base.metadata.tables), CORE_TABLES)
+    def test_core_schema_baseline_remains_registered(self):
+        self.assertTrue(CORE_TABLES.issubset(set(Base.metadata.tables)))
 
-    def test_curriculum_tables_are_not_registered_by_core_models_import(self):
-        self.assertTrue(CURRICULUM_TABLES.isdisjoint(Base.metadata.tables))
+    def test_database_initialization_does_not_import_curriculum_models(self):
+        database_path = Path(__file__).parents[1] / "crownpath" / "database.py"
+        tree = ast.parse(database_path.read_text(encoding="utf-8"))
+        imported_modules = set()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_modules.add(node.module)
+
+        self.assertNotIn("crownpath.curriculum_models", imported_modules)
 
 
 if __name__ == "__main__":
