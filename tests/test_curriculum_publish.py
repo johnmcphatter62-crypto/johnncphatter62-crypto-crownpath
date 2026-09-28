@@ -207,6 +207,36 @@ class CurriculumPublishGateTest(unittest.TestCase):
                 db.commit()
             finally: db.close()
 
+    def test_mastery_rejects_missing_learner_missing_lesson_and_nonlearner_role(self):
+        missing_learner=self.client.put("/api/owner/mastery/CP-USER-DOES-NOT-EXIST/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-MISSING-LEARNER"})
+        self.assertEqual(missing_learner.status_code,404,missing_learner.text)
+        self.assertEqual(missing_learner.json()["detail"],"Learner not found.")
+
+        learner=create_user("Boundary Learner",f"boundary-learner-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
+        nonlearner=create_user("Boundary Instructor",f"boundary-instructor-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Instructor-Test-2026!","INSTRUCTOR")
+        try:
+            missing_lesson=self.client.put(f"/api/owner/mastery/{learner['user_id']}/lesson-does-not-exist",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-MISSING-LESSON"})
+            self.assertEqual(missing_lesson.status_code,404,missing_lesson.text)
+            self.assertEqual(missing_lesson.json()["detail"],"Curriculum lesson not found.")
+            wrong_role=self.client.put(f"/api/owner/mastery/{nonlearner['user_id']}/home-care-foundations",json={"level":"PRACTICED","evidence_type":"ASSESSMENT","evidence_reference":"CP-WRONG-ROLE"})
+            self.assertEqual(wrong_role.status_code,409,wrong_role.text)
+            self.assertEqual(wrong_role.json()["detail"],"Mastery can only be recorded for CrownPath learner pathways.")
+            db=session()
+            try:
+                ids=[learner["user_id"],nonlearner["user_id"]]
+                self.assertEqual(db.scalar(select(func.count()).select_from(LearnerMasteryEvidence).where(LearnerMasteryEvidence.user_id.in_(ids))),0)
+            finally: db.close()
+        finally:
+            db=session()
+            try:
+                ids=[learner["user_id"],nonlearner["user_id"]]
+                db.query(LearnerMasteryEvidence).filter(LearnerMasteryEvidence.user_id.in_(ids)).delete(synchronize_session=False)
+                db.query(LearnerMastery).filter(LearnerMastery.user_id.in_(ids)).delete(synchronize_session=False)
+                db.query(AuthToken).filter(AuthToken.user_id.in_(ids)).delete(synchronize_session=False)
+                db.query(User).filter(User.user_id.in_(ids)).delete(synchronize_session=False)
+                db.commit()
+            finally: db.close()
+
     def test_mastery_rejects_inactive_learner_without_evidence_history(self):
         learner=create_user("Inactive Mastery Learner",f"inactive-mastery-{uuid.uuid4().hex[:10]}@example.com","CrownPath-Learner-Test-2026!","HOME_CARE")
         db=session()
