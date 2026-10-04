@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from crownpath.models import AuditEvent
 from crownpath.curriculum_models import (
     CurriculumCourse,
     CurriculumLesson,
@@ -227,6 +228,15 @@ def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
     item.approved = True
     item.approved_by = user["user_id"]
     item.approved_at = datetime.now(timezone.utc)
+    db.add(AuditEvent(
+        user_id=user["user_id"],
+        action="CURRICULUM_LESSON_VERSION_APPROVED",
+        category="CURRICULUM",
+        resource_type="CURRICULUM_LESSON_VERSION",
+        resource_id=item.version_id,
+        result="SUCCESS",
+        reason=f"Owner approved lesson {item.lesson_id} version {item.version}.",
+    ))
     db.commit()
     db.refresh(item)
     return {
@@ -238,3 +248,30 @@ def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
         "approved_at": item.approved_at,
         "lesson_status": lesson.status,
     }
+
+
+def list_approval_history(db, user: dict, *, limit: int = 50) -> list[dict]:
+    require_owner(user)
+    safe_limit = max(1, min(int(limit), 100))
+    items = db.scalars(
+        select(AuditEvent)
+        .where(
+            AuditEvent.category == "CURRICULUM",
+            AuditEvent.action == "CURRICULUM_LESSON_VERSION_APPROVED",
+        )
+        .order_by(AuditEvent.audit_id.desc())
+        .limit(safe_limit)
+    ).all()
+    return [
+        {
+            "audit_id": item.audit_id,
+            "user_id": item.user_id,
+            "action": item.action,
+            "resource_type": item.resource_type,
+            "resource_id": item.resource_id,
+            "result": item.result,
+            "reason": item.reason,
+            "created_at": item.created_at,
+        }
+        for item in items
+    ]

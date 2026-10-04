@@ -508,6 +508,17 @@ def owner_curriculum_review_versions(lesson_id:str,user=Depends(require_permissi
     finally:
         db.close()
 
+@app.get("/api/owner/curriculum/approval-history")
+def owner_curriculum_approval_history(user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return {"approvals":owner_curriculum.list_approval_history(db,user)}
+    except PermissionError as exc:
+        raise HTTPException(403,str(exc))
+    finally:
+        db.close()
+
 @app.post("/api/owner/curriculum/lesson-versions/approve")
 def owner_curriculum_approve_version(payload:CurriculumVersionApprovalRequest,user=Depends(require_permission("academy.manage"))):
     from crownpath import owner_curriculum
