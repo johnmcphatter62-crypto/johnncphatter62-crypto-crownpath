@@ -177,3 +177,36 @@ def migration_authorization_gate(
         "blockers": blockers,
         "note": "Authorization does not execute a migration; execution requires a separate controlled operation.",
     }
+
+
+def recovery_verification_packet(evidence: dict | None = None) -> dict:
+    """Build a structured recovery evidence packet without verifying it."""
+    evidence = evidence or {}
+    requirements = [
+        ("backup_source", "Backup or PITR source identification"),
+        ("restore_target", "Separate restored database or service identification"),
+        ("restore_time", "Restore point or recovery target"),
+        ("inspection_result", "Read-only CrownPath integrity inspection result"),
+        ("schema_review", "Core schema review"),
+        ("aggregate_review", "Aggregate record-count plausibility review"),
+        ("restore_procedure", "Documented restore procedure"),
+        ("owner_review", "Owner verification review"),
+    ]
+    items = []
+    for key, label in requirements:
+        supplied = evidence.get(key) not in (None, "", [], {})
+        items.append({"key": key, "label": label, "evidence_supplied": supplied})
+    complete = all(item["evidence_supplied"] for item in items)
+    return {
+        "packet_type": "RECOVERY_VERIFICATION",
+        "status": "EVIDENCE_COMPLETE_UNVERIFIED" if complete else "INCOMPLETE",
+        "evidence_complete": complete,
+        "verified": False,
+        "record_integrity_verified": False,
+        "migration_authorized": False,
+        "migration_executed": False,
+        "activation_authorized": False,
+        "learner_release_authorized": False,
+        "items": items,
+        "note": "Evidence completeness is not verification. A separate Owner verification decision is required.",
+    }
