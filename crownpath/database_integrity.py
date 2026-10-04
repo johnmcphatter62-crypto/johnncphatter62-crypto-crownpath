@@ -139,3 +139,41 @@ def recovery_evidence_checklist(inspection: dict | None = None) -> dict:
         ],
         "note": "Checklist completion alone does not verify data integrity or authorize migration.",
     }
+
+
+def migration_authorization_gate(
+    verification: dict | None = None,
+    owner_authorization: dict | None = None,
+) -> dict:
+    """Evaluate migration authorization without executing or persisting anything."""
+    verification = verification or {}
+    owner_authorization = owner_authorization or {}
+    recovery_verified = (
+        verification.get("verified") is True
+        and verification.get("record_integrity_verified") is True
+    )
+    owner_explicit = (
+        owner_authorization.get("approved") is True
+        and bool(owner_authorization.get("owner_id"))
+        and bool(owner_authorization.get("approved_at"))
+    )
+    authorized = recovery_verified and owner_explicit
+    blockers = []
+    if not recovery_verified:
+        blockers.append("Restored-database recovery evidence is not verified.")
+    if not owner_explicit:
+        blockers.append("Explicit Owner migration authorization is not recorded.")
+    return {
+        "gate": "MIGRATION_AUTHORIZATION",
+        "status": "AUTHORIZED" if authorized else "LOCKED",
+        "migration_authorized": authorized,
+        "migration_executed": False,
+        "activation_authorized": False,
+        "learner_release_authorized": False,
+        "requirements": {
+            "recovery_evidence_verified": recovery_verified,
+            "explicit_owner_authorization": owner_explicit,
+        },
+        "blockers": blockers,
+        "note": "Authorization does not execute a migration; execution requires a separate controlled operation.",
+    }
