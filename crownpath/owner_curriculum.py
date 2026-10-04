@@ -462,3 +462,35 @@ def curriculum_completion_dashboard(db, user: dict) -> dict:
         "migration_executed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_approval_backlog(db, user: dict) -> dict:
+    """Summarize saved lesson versions that still need Owner approval review."""
+    require_owner(user)
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+    approved_lesson_ids = {version.lesson_id for version in versions if version.approved}
+    versions_by_lesson = {}
+    for version in versions:
+        versions_by_lesson.setdefault(version.lesson_id, []).append(version)
+    backlog = []
+    for lesson in lessons:
+        lesson_versions = versions_by_lesson.get(lesson.id, [])
+        if lesson_versions and lesson.id not in approved_lesson_ids:
+            backlog.append({
+                "lesson_id": lesson.id,
+                "title": lesson.title,
+                "unit_id": lesson.unit_id,
+                "saved_versions": len(lesson_versions),
+            })
+    backlog.sort(key=lambda item: (-item["saved_versions"], str(item["title"]).lower()))
+    return {
+        "read_only": True,
+        "status": "CLEAR" if not backlog else "APPROVAL_REVIEW_REQUIRED",
+        "backlog_count": len(backlog),
+        "saved_versions_waiting": sum(item["saved_versions"] for item in backlog),
+        "backlog": backlog,
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
