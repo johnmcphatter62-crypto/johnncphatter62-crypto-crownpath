@@ -436,3 +436,29 @@ def curriculum_structure_audit(db, user: dict) -> dict:
         "activation_performed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_completion_dashboard(db, user: dict) -> dict:
+    """Report Owner curriculum completion without changing curriculum state."""
+    require_owner(user)
+    progress = curriculum_progress_summary(db, user)
+    lessons = progress["lessons"]
+    approved = progress["lessons_with_approved_version"]
+    waiting = progress["lessons_waiting_for_approval"]
+    completion_percent = round((approved / lessons) * 100, 1) if lessons else 0.0
+    return {
+        "read_only": True,
+        "status": "COMPLETE" if lessons > 0 and waiting == 0 else "IN_PROGRESS",
+        "completion_percent": completion_percent,
+        "programs": progress["programs"],
+        "courses": progress["courses"],
+        "units": progress["units"],
+        "lessons": lessons,
+        "saved_versions": progress["saved_versions"],
+        "approved_versions": progress["approved_versions"],
+        "lessons_completed": approved,
+        "lessons_remaining": waiting,
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
