@@ -210,3 +210,42 @@ def recovery_verification_packet(evidence: dict | None = None) -> dict:
         "items": items,
         "note": "Evidence completeness is not verification. A separate Owner verification decision is required.",
     }
+
+
+def owner_verification_decision_gate(
+    recovery_record: dict | None = None,
+    owner_decision: dict | None = None,
+) -> dict:
+    """Evaluate Owner verification sign-off without persisting or executing anything."""
+    recovery_record = recovery_record or {}
+    owner_decision = owner_decision or {}
+    record_verified = (
+        recovery_record.get("verification_status") == "VERIFIED"
+        and recovery_record.get("verified") is True
+        and recovery_record.get("record_integrity_verified") is True
+    )
+    owner_confirmed = (
+        owner_decision.get("decision") == "VERIFY_RECOVERY"
+        and owner_decision.get("owner_confirmed") is True
+        and bool(owner_decision.get("owner_id"))
+        and bool(owner_decision.get("decided_at"))
+    )
+    accepted = record_verified and owner_confirmed
+    blockers = []
+    if not record_verified:
+        blockers.append("Restored CrownPath record integrity has not been independently verified.")
+    if not owner_confirmed:
+        blockers.append("Owner recovery-verification sign-off has not been explicitly recorded.")
+    return {
+        "gate": "OWNER_RECOVERY_VERIFICATION",
+        "status": "VERIFIED" if accepted else "LOCKED",
+        "verification_accepted": accepted,
+        "record_integrity_verified": record_verified,
+        "owner_signoff_present": owner_confirmed,
+        "migration_authorized": False,
+        "migration_executed": False,
+        "activation_authorized": False,
+        "learner_release_authorized": False,
+        "blockers": blockers,
+        "note": "Owner verification sign-off does not authorize or execute a production migration.",
+    }
