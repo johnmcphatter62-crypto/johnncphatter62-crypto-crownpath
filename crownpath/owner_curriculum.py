@@ -462,3 +462,37 @@ def curriculum_completion_dashboard(db, user: dict) -> dict:
         "migration_executed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_version_history_summary(db, user: dict) -> dict:
+    """Summarize lesson-version activity for Owner review without modifying records."""
+    require_owner(user)
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+    versions_by_lesson = {}
+    for version in versions:
+        versions_by_lesson.setdefault(version.lesson_id, []).append(version)
+    approved_versions = [version for version in versions if version.approved]
+    revised_lessons = []
+    for lesson in lessons:
+        lesson_versions = versions_by_lesson.get(lesson.id, [])
+        if len(lesson_versions) > 1:
+            revised_lessons.append({
+                "lesson_id": lesson.id,
+                "title": lesson.title,
+                "version_count": len(lesson_versions),
+                "approved_versions": len([version for version in lesson_versions if version.approved]),
+            })
+    revised_lessons.sort(key=lambda item: (-item["version_count"], str(item["title"]).lower()))
+    return {
+        "read_only": True,
+        "status": "VERSION_HISTORY_AVAILABLE" if versions else "NO_VERSIONS_SAVED",
+        "saved_versions": len(versions),
+        "approved_versions": len(approved_versions),
+        "unapproved_versions": len(versions) - len(approved_versions),
+        "lessons_with_multiple_versions": len(revised_lessons),
+        "revised_lessons": revised_lessons,
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
