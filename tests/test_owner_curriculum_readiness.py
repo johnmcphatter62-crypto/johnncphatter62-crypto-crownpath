@@ -25,7 +25,7 @@ def test_owner_workspace_has_readiness_check_without_activation_control():
     assert 'id="loadCurriculumReadiness"' in HTML
     assert 'id="curriculumReadiness"' in HTML
     assert "/api/owner/curriculum/readiness" in APP
-    assert "does not activate or publish curriculum" in (HTML+"\n"+APP).lower()
+    assert "does not activate curriculum or open learner access" in (HTML+"\n"+APP).lower()
     assert 'id="activateCurriculum"' not in HTML
 
 
