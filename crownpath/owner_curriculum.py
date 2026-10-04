@@ -224,6 +224,10 @@ def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
     lesson = db.get(CurriculumLesson, item.lesson_id)
     if not lesson:
         raise ValueError("Lesson not found.")
+    if item.approved:
+        raise ValueError("Lesson version is already approved.")
+    if lesson.status != DRAFT_STATUS:
+        raise ValueError("Only draft lessons can receive version approval.")
 
     item.approved = True
     item.approved_by = user["user_id"]
@@ -239,6 +243,7 @@ def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
     ))
     db.commit()
     db.refresh(item)
+    lesson.active_version = item.version
     return {
         "version_id": item.version_id,
         "lesson_id": item.lesson_id,
