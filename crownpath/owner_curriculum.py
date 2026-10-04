@@ -6,6 +6,7 @@ the curriculum migration remains unapplied in production.
 """
 import re
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -176,3 +177,52 @@ def create_unapproved_lesson_version(db, user: dict, *, lesson_id: str, content_
     )
     db.add(item); db.commit(); db.refresh(item)
     return {"version_id": item.version_id, "lesson_id": item.lesson_id, "version": item.version, "approved": item.approved}
+
+
+def list_lesson_versions_for_review(db, user: dict, *, lesson_id: str) -> list[dict]:
+    require_owner(user)
+    if not db.get(CurriculumLesson, lesson_id):
+        raise ValueError("Lesson not found.")
+    items = db.scalars(
+        select(CurriculumLessonVersion)
+        .where(CurriculumLessonVersion.lesson_id == lesson_id)
+        .order_by(CurriculumLessonVersion.version.desc())
+    ).all()
+    return [
+        {
+            "version_id": item.version_id,
+            "lesson_id": item.lesson_id,
+            "version": item.version,
+            "source_type": item.source_type,
+            "approved": item.approved,
+            "approved_by": item.approved_by,
+            "approved_at": item.approved_at,
+            "created_at": item.created_at,
+        }
+        for item in items
+    ]
+
+
+def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
+    require_owner(user)
+    item = db.get(CurriculumLessonVersion, version_id)
+    if not item:
+        raise ValueError("Lesson version not found.")
+    lesson = db.get(CurriculumLesson, item.lesson_id)
+    if not lesson:
+        raise ValueError("Lesson not found.")
+
+    item.approved = True
+    item.approved_by = user["user_id"]
+    item.approved_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(item)
+    return {
+        "version_id": item.version_id,
+        "lesson_id": item.lesson_id,
+        "version": item.version,
+        "approved": item.approved,
+        "approved_by": item.approved_by,
+        "approved_at": item.approved_at,
+        "lesson_status": lesson.status,
+    }
