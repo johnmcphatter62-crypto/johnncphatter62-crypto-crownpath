@@ -462,3 +462,46 @@ def curriculum_completion_dashboard(db, user: dict) -> dict:
         "migration_executed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_approval_coverage(db, user: dict) -> dict:
+    """Report approval coverage by curriculum hierarchy without changing state."""
+    require_owner(user)
+    programs = db.query(CurriculumProgram).all()
+    courses = db.query(CurriculumCourse).all()
+    units = db.query(CurriculumUnit).all()
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+    approved_lesson_ids = {v.lesson_id for v in versions if v.approved}
+    unit_rows = []
+    for unit in units:
+        unit_lessons = [lesson for lesson in lessons if lesson.unit_id == unit.id]
+        approved = sum(1 for lesson in unit_lessons if lesson.id in approved_lesson_ids)
+        unit_rows.append({"unit_id": unit.id, "title": unit.title, "lessons": len(unit_lessons), "approved_lessons": approved, "missing_approval": len(unit_lessons) - approved})
+    course_rows = []
+    for course in courses:
+        course_unit_ids = {unit.id for unit in units if unit.course_id == course.id}
+        course_lessons = [lesson for lesson in lessons if lesson.unit_id in course_unit_ids]
+        approved = sum(1 for lesson in course_lessons if lesson.id in approved_lesson_ids)
+        course_rows.append({"course_id": course.id, "title": course.title, "lessons": len(course_lessons), "approved_lessons": approved, "missing_approval": len(course_lessons) - approved})
+    program_rows = []
+    for program in programs:
+        course_ids = {course.id for course in courses if course.program_id == program.id}
+        unit_ids = {unit.id for unit in units if unit.course_id in course_ids}
+        program_lessons = [lesson for lesson in lessons if lesson.unit_id in unit_ids]
+        approved = sum(1 for lesson in program_lessons if lesson.id in approved_lesson_ids)
+        program_rows.append({"program_id": program.id, "title": program.title, "lessons": len(program_lessons), "approved_lessons": approved, "missing_approval": len(program_lessons) - approved})
+    total_missing = sum(1 for lesson in lessons if lesson.id not in approved_lesson_ids)
+    return {
+        "read_only": True,
+        "status": "COVERED" if lessons and total_missing == 0 else "REVIEW_REQUIRED",
+        "total_lessons": len(lessons),
+        "approved_lessons": len(lessons) - total_missing,
+        "missing_approval": total_missing,
+        "programs": program_rows,
+        "courses": course_rows,
+        "units": unit_rows,
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
