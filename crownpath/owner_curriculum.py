@@ -232,6 +232,7 @@ def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
     item.approved = True
     item.approved_by = user["user_id"]
     item.approved_at = datetime.now(timezone.utc)
+    lesson.active_version = item.version
     db.add(AuditEvent(
         user_id=user["user_id"],
         action="CURRICULUM_LESSON_VERSION_APPROVED",
@@ -243,7 +244,6 @@ def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
     ))
     db.commit()
     db.refresh(item)
-    lesson.active_version = item.version
     return {
         "version_id": item.version_id,
         "lesson_id": item.lesson_id,
