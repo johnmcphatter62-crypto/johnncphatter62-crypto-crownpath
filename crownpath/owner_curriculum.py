@@ -462,3 +462,31 @@ def curriculum_completion_dashboard(db, user: dict) -> dict:
         "migration_executed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_draft_inventory(db, user: dict) -> dict:
+    """Summarize Owner curriculum records that remain in draft or unapproved state."""
+    require_owner(user)
+    programs = db.query(CurriculumProgram).all()
+    courses = db.query(CurriculumCourse).all()
+    units = db.query(CurriculumUnit).all()
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+    draft_programs = [item for item in programs if getattr(item, "status", None) == "DRAFT"]
+    draft_courses = [item for item in courses if getattr(item, "status", None) == "DRAFT"]
+    draft_units = [item for item in units if getattr(item, "status", None) == "DRAFT"]
+    draft_lessons = [item for item in lessons if getattr(item, "status", None) == "DRAFT"]
+    unapproved_versions = [item for item in versions if not item.approved]
+    return {
+        "read_only": True,
+        "status": "CLEAR" if not (draft_programs or draft_courses or draft_units or draft_lessons or unapproved_versions) else "DRAFT_WORK_REMAINS",
+        "draft_programs": len(draft_programs),
+        "draft_courses": len(draft_courses),
+        "draft_units": len(draft_units),
+        "draft_lessons": len(draft_lessons),
+        "unapproved_versions": len(unapproved_versions),
+        "total_draft_items": len(draft_programs) + len(draft_courses) + len(draft_units) + len(draft_lessons) + len(unapproved_versions),
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
