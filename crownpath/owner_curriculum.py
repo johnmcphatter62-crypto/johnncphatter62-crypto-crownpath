@@ -224,10 +224,15 @@ def approve_lesson_version(db, user: dict, *, version_id: str) -> dict:
     lesson = db.get(CurriculumLesson, item.lesson_id)
     if not lesson:
         raise ValueError("Lesson not found.")
+    if item.approved:
+        raise ValueError("Lesson version is already approved.")
+    if lesson.status != DRAFT_STATUS:
+        raise ValueError("Only draft lessons can receive version approval.")
 
     item.approved = True
     item.approved_by = user["user_id"]
     item.approved_at = datetime.now(timezone.utc)
+    lesson.active_version = item.version
     db.add(AuditEvent(
         user_id=user["user_id"],
         action="CURRICULUM_LESSON_VERSION_APPROVED",
