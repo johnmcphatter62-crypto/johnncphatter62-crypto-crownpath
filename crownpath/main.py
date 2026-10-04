@@ -508,6 +508,17 @@ def owner_curriculum_review_versions(lesson_id:str,user=Depends(require_permissi
     finally:
         db.close()
 
+@app.get("/api/owner/curriculum/content-gaps")
+def owner_curriculum_content_gaps(user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.curriculum_content_gaps(db,user)
+    except PermissionError as exc:
+        raise HTTPException(403,str(exc))
+    finally:
+        db.close()
+
 @app.get("/api/owner/curriculum/completion-dashboard")
 def owner_curriculum_completion_dashboard(user=Depends(require_permission("academy.manage"))):
     from crownpath import owner_curriculum
