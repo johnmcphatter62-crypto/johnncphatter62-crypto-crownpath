@@ -436,3 +436,33 @@ def curriculum_structure_audit(db, user: dict) -> dict:
         "activation_performed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_quality_summary(db, user: dict) -> dict:
+    """Combine Owner curriculum quality signals without changing state."""
+    require_owner(user)
+    progress = curriculum_progress_summary(db, user)
+    structure = curriculum_structure_audit(db, user)
+    readiness = curriculum_readiness(db, user)
+    migration = migration_readiness_dashboard(db, user)
+    blockers = []
+    if structure["status"] != "CLEAR":
+        blockers.append("Curriculum structure requires review.")
+    if progress["lessons_waiting_for_approval"] > 0:
+        blockers.append("One or more lessons still require an approved version.")
+    if not readiness.get("ready_for_activation_review", False):
+        blockers.append("Curriculum readiness review is not yet clear.")
+    if migration.get("overall_status") != "AUTHORIZED":
+        blockers.append("Production migration authorization remains locked.")
+    return {
+        "read_only": True,
+        "status": "READY_FOR_OWNER_REVIEW" if not blockers else "REVIEW_REQUIRED",
+        "progress": progress,
+        "structure": structure,
+        "readiness": readiness,
+        "migration": migration,
+        "blockers": blockers,
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
