@@ -395,3 +395,44 @@ def curriculum_progress_summary(db, user: dict) -> dict:
         "activation_performed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_structure_audit(db, user: dict) -> dict:
+    """Return Owner-only structural quality checks without changing curriculum state."""
+    require_owner(user)
+    programs = db.query(CurriculumProgram).all()
+    courses = db.query(CurriculumCourse).all()
+    units = db.query(CurriculumUnit).all()
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+
+    program_ids = {item.program_id for item in programs}
+    course_ids = {item.course_id for item in courses}
+    unit_ids = {item.unit_id for item in units}
+    lesson_ids = {item.lesson_id for item in lessons}
+    approved_lesson_ids = {item.lesson_id for item in versions if item.approved}
+
+    orphaned_courses = sorted(item.course_id for item in courses if item.program_id not in program_ids)
+    orphaned_units = sorted(item.unit_id for item in units if item.course_id not in course_ids)
+    orphaned_lessons = sorted(item.lesson_id for item in lessons if item.unit_id not in unit_ids)
+    orphaned_versions = sorted(item.version_id for item in versions if item.lesson_id not in lesson_ids)
+    lessons_without_approved_version = sorted(lesson_ids - approved_lesson_ids)
+    blockers = (
+        len(orphaned_courses)
+        + len(orphaned_units)
+        + len(orphaned_lessons)
+        + len(orphaned_versions)
+        + len(lessons_without_approved_version)
+    )
+    return {
+        "read_only": True,
+        "status": "CLEAR" if blockers == 0 else "REVIEW_REQUIRED",
+        "blocker_count": blockers,
+        "orphaned_courses": orphaned_courses,
+        "orphaned_units": orphaned_units,
+        "orphaned_lessons": orphaned_lessons,
+        "orphaned_versions": orphaned_versions,
+        "lessons_without_approved_version": lessons_without_approved_version,
+        "activation_performed": False,
+        "learner_release_authorized": False,
+    }
