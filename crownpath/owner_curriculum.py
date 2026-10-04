@@ -346,11 +346,15 @@ def migration_readiness_dashboard(db, user: dict) -> dict:
     require_owner(user)
     from crownpath.database_integrity import (
         migration_authorization_gate,
+        owner_verification_decision_gate,
         recovery_evidence_checklist,
+        recovery_verification_packet,
         verification_record,
     )
     integrity = verification_record()
     recovery = recovery_evidence_checklist()
+    packet = recovery_verification_packet()
+    verification_gate = owner_verification_decision_gate(recovery_record=integrity)
     gate = migration_authorization_gate(verification=integrity)
     curriculum = curriculum_readiness(db, user)
     return {
@@ -358,6 +362,8 @@ def migration_readiness_dashboard(db, user: dict) -> dict:
         "overall_status": "BLOCKED" if not gate["migration_authorized"] else "AUTHORIZED_FOR_SEPARATE_OPERATION",
         "integrity": integrity,
         "recovery": recovery,
+        "recovery_packet": packet,
+        "verification_gate": verification_gate,
         "migration_gate": gate,
         "curriculum": curriculum,
         "migration_executed": False,

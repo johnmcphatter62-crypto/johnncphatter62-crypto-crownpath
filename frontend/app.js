@@ -89,6 +89,8 @@ async function loadMigrationReadiness(){
     const data=await jsonRequest('/api/owner/curriculum/migration-readiness');
     list.append(academyItem('Overall migration status',data.overall_status||'BLOCKED'));
     list.append(academyItem('Database integrity',data.integrity?.verification_status||'UNVERIFIED'));
+    list.append(academyItem('Recovery evidence packet',data.recovery_packet?.status||'INCOMPLETE'));
+    list.append(academyItem('Owner verification decision',data.verification_gate?.status||'LOCKED'));
     list.append(academyItem('Migration authorization',data.migration_gate?.status||'LOCKED'));
     list.append(academyItem('Curriculum readiness',data.curriculum?.ready_for_activation_review?'Ready for Owner review':'Not ready for Owner review'));
     (data.migration_gate?.blockers||[]).forEach(item=>list.append(academyItem('Blocker',item)));
