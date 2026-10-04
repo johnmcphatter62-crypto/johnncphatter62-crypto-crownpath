@@ -51,6 +51,19 @@ class OwnerCurriculumSecurityTest(unittest.TestCase):
             source = inspect.getsource(getattr(owner_curriculum, name))
             self.assertIn("require_owner(user)", source)
 
+    def test_review_and_approval_operations_require_owner(self):
+        for name in ("list_lesson_versions_for_review", "approve_lesson_version"):
+            source = inspect.getsource(getattr(owner_curriculum, name))
+            self.assertIn("require_owner(user)", source)
+
+    def test_approval_records_owner_and_time_without_publishing(self):
+        source = inspect.getsource(owner_curriculum.approve_lesson_version)
+        self.assertIn('item.approved = True', source)
+        self.assertIn('item.approved_by = user["user_id"]', source)
+        self.assertIn("datetime.now(timezone.utc)", source)
+        self.assertNotIn("lesson.status =", source)
+        self.assertNotIn("PUBLISHED", source)
+
     def test_service_has_no_publish_or_release_operation(self):
         public_names = {name.lower() for name in dir(owner_curriculum) if not name.startswith("_")}
         self.assertNotIn("publish", public_names)
