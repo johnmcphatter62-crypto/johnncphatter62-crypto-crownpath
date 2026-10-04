@@ -280,3 +280,34 @@ def list_approval_history(db, user: dict, *, limit: int = 50) -> list[dict]:
         }
         for item in items
     ]
+
+
+def curriculum_readiness(db, user: dict) -> dict:
+    """Report Owner-only draft readiness without publishing or mutating curriculum."""
+    require_owner(user)
+    programs = db.scalars(select(CurriculumProgram)).all()
+    courses = db.scalars(select(CurriculumCourse)).all()
+    units = db.scalars(select(CurriculumUnit)).all()
+    lessons = db.scalars(select(CurriculumLesson)).all()
+    versions = db.scalars(select(CurriculumLessonVersion)).all()
+
+    approved_versions = [item for item in versions if item.approved]
+    lessons_with_versions = {item.lesson_id for item in versions}
+    lessons_with_approved_versions = {item.lesson_id for item in approved_versions}
+
+    checks = [
+        {"key": "programs", "label": "At least one draft program", "ready": bool(programs), "count": len(programs)},
+        {"key": "courses", "label": "At least one draft course", "ready": bool(courses), "count": len(courses)},
+        {"key": "units", "label": "At least one curriculum unit", "ready": bool(units), "count": len(units)},
+        {"key": "lessons", "label": "At least one draft lesson", "ready": bool(lessons), "count": len(lessons)},
+        {"key": "versions", "label": "Every lesson has a saved version", "ready": bool(lessons) and all(item.lesson_id in lessons_with_versions for item in lessons), "count": len(versions)},
+        {"key": "approvals", "label": "Every lesson has an Owner-approved version", "ready": bool(lessons) and all(item.lesson_id in lessons_with_approved_versions for item in lessons), "count": len(approved_versions)},
+    ]
+    missing = [item["label"] for item in checks if not item["ready"]]
+    return {
+        "ready_for_activation_review": not missing,
+        "activation_performed": False,
+        "learner_publishing_enabled": False,
+        "checks": checks,
+        "missing": missing,
+    }
