@@ -29,6 +29,28 @@ class OwnerCurriculumSecurityTest(unittest.TestCase):
         self.assertIn("status=DRAFT_STATUS", source)
         self.assertEqual(owner_curriculum.DRAFT_STATUS, "DRAFT")
 
+    def test_course_and_lesson_creation_are_forced_to_draft(self):
+        self.assertIn("status=DRAFT_STATUS", inspect.getsource(owner_curriculum.create_draft_course))
+        self.assertIn("status=DRAFT_STATUS", inspect.getsource(owner_curriculum.create_draft_lesson))
+
+    def test_lesson_versions_are_forced_unapproved(self):
+        source = inspect.getsource(owner_curriculum.create_unapproved_lesson_version)
+        self.assertIn("approved=False", source)
+        self.assertIn("approved_by=None", source)
+        self.assertIn("approved_at=None", source)
+
+    def test_all_mutating_hierarchy_operations_require_owner(self):
+        names = (
+            "create_draft_program",
+            "create_draft_course",
+            "create_draft_unit",
+            "create_draft_lesson",
+            "create_unapproved_lesson_version",
+        )
+        for name in names:
+            source = inspect.getsource(getattr(owner_curriculum, name))
+            self.assertIn("require_owner(user)", source)
+
     def test_service_has_no_publish_or_release_operation(self):
         public_names = {name.lower() for name in dir(owner_curriculum) if not name.startswith("_")}
         self.assertNotIn("publish", public_names)
