@@ -311,3 +311,31 @@ def curriculum_readiness(db, user: dict) -> dict:
         "checks": checks,
         "missing": missing,
     }
+
+
+def activation_plan_preview(db, user: dict) -> dict:
+    """Describe a future activation sequence without performing any activation."""
+    require_owner(user)
+    readiness = curriculum_readiness(db, user)
+    steps = [
+        {"sequence": 1, "key": "recovery", "label": "Verify backup and restored-database integrity", "performed": False},
+        {"sequence": 2, "key": "migration", "label": "Apply the reviewed curriculum migration", "performed": False},
+        {"sequence": 3, "key": "integrity", "label": "Run post-migration integrity checks", "performed": False},
+        {"sequence": 4, "key": "owner_review", "label": "Re-run Owner curriculum readiness review", "performed": False},
+        {"sequence": 5, "key": "learner_release", "label": "Consider learner release only under a separate Owner-approved release gate", "performed": False},
+    ]
+    blockers = list(readiness["missing"])
+    blockers.extend([
+        "Restored-database record integrity has not been independently verified.",
+        "Production curriculum migration has not been applied.",
+        "Learner release requires a separate future Owner approval.",
+    ])
+    return {
+        "preview_only": True,
+        "activation_performed": False,
+        "migration_performed": False,
+        "learner_release_performed": False,
+        "readiness": readiness,
+        "steps": steps,
+        "blockers": blockers,
+    }
