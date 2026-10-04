@@ -370,3 +370,28 @@ def migration_readiness_dashboard(db, user: dict) -> dict:
         "activation_performed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_progress_summary(db, user: dict) -> dict:
+    """Return Owner-only curriculum build counts without changing curriculum state."""
+    require_owner(user)
+    programs = db.query(CurriculumProgram).all()
+    courses = db.query(CurriculumCourse).all()
+    units = db.query(CurriculumUnit).all()
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+    approved_versions = [item for item in versions if item.approved]
+    lessons_with_approved = {item.lesson_id for item in approved_versions}
+    return {
+        "read_only": True,
+        "programs": len(programs),
+        "courses": len(courses),
+        "units": len(units),
+        "lessons": len(lessons),
+        "saved_versions": len(versions),
+        "approved_versions": len(approved_versions),
+        "lessons_with_approved_version": len(lessons_with_approved),
+        "lessons_waiting_for_approval": max(0, len(lessons) - len(lessons_with_approved)),
+        "activation_performed": False,
+        "learner_release_authorized": False,
+    }
