@@ -45,6 +45,14 @@ def program_dict(item: CurriculumProgram) -> dict:
     }
 
 
+def unit_dict(item: CurriculumUnit) -> dict:
+    return {"unit_id": item.unit_id, "course_id": item.course_id, "title": item.title, "description": item.description, "sequence": item.sequence}
+
+
+def lesson_dict(item: CurriculumLesson) -> dict:
+    return {"lesson_id": item.lesson_id, "unit_id": item.unit_id, "title": item.title, "sequence": item.sequence, "active_version": item.active_version, "status": item.status}
+
+
 def course_dict(item: CurriculumCourse) -> dict:
     return {
         "course_id": item.course_id,
@@ -61,9 +69,13 @@ def list_structure(db, user: dict) -> dict:
     require_owner(user)
     programs = db.scalars(select(CurriculumProgram).order_by(CurriculumProgram.title)).all()
     courses = db.scalars(select(CurriculumCourse).order_by(CurriculumCourse.program_id, CurriculumCourse.sequence)).all()
+    units = db.scalars(select(CurriculumUnit).order_by(CurriculumUnit.course_id, CurriculumUnit.sequence)).all()
+    lessons = db.scalars(select(CurriculumLesson).order_by(CurriculumLesson.unit_id, CurriculumLesson.sequence)).all()
     return {
         "programs": [program_dict(item) for item in programs],
         "courses": [course_dict(item) for item in courses],
+        "units": [unit_dict(item) for item in units],
+        "lessons": [lesson_dict(item) for item in lessons],
     }
 
 
