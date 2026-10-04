@@ -470,11 +470,9 @@ def curriculum_content_gaps(db, user: dict) -> dict:
     lessons = db.query(CurriculumLesson).all()
     versions = db.query(CurriculumLessonVersion).all()
     versions_by_lesson = {}
-    approved_lesson_ids = set()
     for version in versions:
         versions_by_lesson.setdefault(version.lesson_id, []).append(version)
-        if version.approved:
-            approved_lesson_ids.add(version.lesson_id)
+    approved_lesson_ids = {version.lesson_id for version in versions if version.approved}
     needs_content = []
     awaiting_approval = []
     for lesson in lessons:
