@@ -60,6 +60,12 @@ class InstructorRequestCreate(BaseModel):
 class InstructorReviewRequest(BaseModel):
     decision:str
     note:str|None=Field(default=None,max_length=1000)
+class CurriculumProgramCreateRequest(BaseModel):
+    title:str=Field(min_length=2,max_length=200)
+    slug:str=Field(min_length=1,max_length=120)
+    description:str|None=Field(default=None,max_length=4000)
+class CurriculumVersionApprovalRequest(BaseModel):
+    version_id:str=Field(min_length=1,max_length=100)
 
 def release_flag_enabled(name:str) -> bool:
     return os.getenv(name, "false").strip().lower() == "true"
@@ -405,3 +411,53 @@ def checks(user=Depends(require_permission("security.manage"))): return release_
 def recovery(user=Depends(require_permission("security.manage"))): return recovery_plan()
 @app.get("/api/startup/status")
 def startup(): return startup_status
+
+@app.get("/api/owner/curriculum")
+def owner_curriculum_structure(user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.list_structure(db,user)
+    except (PermissionError,ValueError) as exc:
+        raise HTTPException(400,str(exc))
+    finally:
+        db.close()
+
+@app.post("/api/owner/curriculum/programs")
+def owner_curriculum_create_program(payload:CurriculumProgramCreateRequest,user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.create_draft_program(db,user,title=payload.title,slug=payload.slug,description=payload.description)
+    except PermissionError as exc:
+        raise HTTPException(403,str(exc))
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    finally:
+        db.close()
+
+@app.get("/api/owner/curriculum/lessons/{lesson_id}/versions")
+def owner_curriculum_review_versions(lesson_id:str,user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return {"versions":owner_curriculum.list_lesson_versions_for_review(db,user,lesson_id=lesson_id)}
+    except PermissionError as exc:
+        raise HTTPException(403,str(exc))
+    except ValueError as exc:
+        raise HTTPException(404,str(exc))
+    finally:
+        db.close()
+
+@app.post("/api/owner/curriculum/lesson-versions/approve")
+def owner_curriculum_approve_version(payload:CurriculumVersionApprovalRequest,user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.approve_lesson_version(db,user,version_id=payload.version_id)
+    except PermissionError as exc:
+        raise HTTPException(403,str(exc))
+    except ValueError as exc:
+        raise HTTPException(404,str(exc))
+    finally:
+        db.close()
