@@ -110,3 +110,32 @@ def verification_record(inspection: dict | None = None) -> dict:
         ],
         "note": "This record does not verify restored record integrity by itself.",
     }
+
+
+def recovery_evidence_checklist(inspection: dict | None = None) -> dict:
+    """Summarize recovery evidence requirements without granting authorization."""
+    record = verification_record(inspection)
+    checks = [
+        {"key": "backup_source", "label": "Backup or PITR source identified", "status": "REQUIRED"},
+        {"key": "separate_restore", "label": "Restore performed in a separate database or service", "status": "REQUIRED"},
+        {"key": "read_only_inspection", "label": "Read-only restored-database inspection attached", "status": "PRESENT" if record["read_only_inspection"] else "MISSING"},
+        {"key": "core_schema", "label": "Expected core schema present", "status": "PRESENT" if record["core_schema_complete"] else "MISSING"},
+        {"key": "aggregate_review", "label": "Aggregate record counts reviewed for plausibility", "status": "REQUIRED"},
+        {"key": "owner_review", "label": "Owner verification review recorded", "status": "REQUIRED"},
+    ]
+    return {
+        "review_only": True,
+        "verification_status": record["verification_status"],
+        "migration_authorized": False,
+        "activation_authorized": False,
+        "checks": checks,
+        "required_sequence": [
+            "Identify backup or PITR recovery source.",
+            "Restore into a separate database or service.",
+            "Run the CrownPath read-only integrity inspection.",
+            "Review schema and aggregate counts for plausibility.",
+            "Record Owner verification decision separately.",
+            "Only then consider a separately approved production migration.",
+        ],
+        "note": "Checklist completion alone does not verify data integrity or authorize migration.",
+    }
