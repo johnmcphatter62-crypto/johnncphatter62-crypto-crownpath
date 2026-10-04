@@ -64,6 +64,25 @@ class CurriculumProgramCreateRequest(BaseModel):
     title:str=Field(min_length=2,max_length=200)
     slug:str=Field(min_length=1,max_length=120)
     description:str|None=Field(default=None,max_length=4000)
+class CurriculumCourseCreateRequest(BaseModel):
+    program_id:str=Field(min_length=1,max_length=100)
+    title:str=Field(min_length=2,max_length=200)
+    slug:str=Field(min_length=1,max_length=120)
+    description:str|None=Field(default=None,max_length=4000)
+    sequence:int=Field(default=1,ge=1)
+class CurriculumUnitCreateRequest(BaseModel):
+    course_id:str=Field(min_length=1,max_length=100)
+    title:str=Field(min_length=2,max_length=200)
+    description:str|None=Field(default=None,max_length=4000)
+    sequence:int=Field(default=1,ge=1)
+class CurriculumLessonCreateRequest(BaseModel):
+    unit_id:str=Field(min_length=1,max_length=100)
+    title:str=Field(min_length=2,max_length=200)
+    sequence:int=Field(default=1,ge=1)
+class CurriculumLessonVersionCreateRequest(BaseModel):
+    lesson_id:str=Field(min_length=1,max_length=100)
+    content_json:str=Field(min_length=2,max_length=100000)
+    version:int=Field(default=1,ge=1)
 class CurriculumVersionApprovalRequest(BaseModel):
     version_id:str=Field(min_length=1,max_length=100)
 
@@ -435,6 +454,46 @@ def owner_curriculum_create_program(payload:CurriculumProgramCreateRequest,user=
         raise HTTPException(400,str(exc))
     finally:
         db.close()
+
+@app.post("/api/owner/curriculum/courses")
+def owner_curriculum_create_course(payload:CurriculumCourseCreateRequest,user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.create_draft_course(db,user,program_id=payload.program_id,title=payload.title,slug=payload.slug,description=payload.description,sequence=payload.sequence)
+    except PermissionError as exc: raise HTTPException(403,str(exc))
+    except ValueError as exc: raise HTTPException(400,str(exc))
+    finally: db.close()
+
+@app.post("/api/owner/curriculum/units")
+def owner_curriculum_create_unit(payload:CurriculumUnitCreateRequest,user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.create_draft_unit(db,user,course_id=payload.course_id,title=payload.title,description=payload.description,sequence=payload.sequence)
+    except PermissionError as exc: raise HTTPException(403,str(exc))
+    except ValueError as exc: raise HTTPException(400,str(exc))
+    finally: db.close()
+
+@app.post("/api/owner/curriculum/lessons")
+def owner_curriculum_create_lesson(payload:CurriculumLessonCreateRequest,user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.create_draft_lesson(db,user,unit_id=payload.unit_id,title=payload.title,sequence=payload.sequence)
+    except PermissionError as exc: raise HTTPException(403,str(exc))
+    except ValueError as exc: raise HTTPException(400,str(exc))
+    finally: db.close()
+
+@app.post("/api/owner/curriculum/lesson-versions")
+def owner_curriculum_create_lesson_version(payload:CurriculumLessonVersionCreateRequest,user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.create_unapproved_lesson_version(db,user,lesson_id=payload.lesson_id,content_json=payload.content_json,version=payload.version)
+    except PermissionError as exc: raise HTTPException(403,str(exc))
+    except ValueError as exc: raise HTTPException(400,str(exc))
+    finally: db.close()
 
 @app.get("/api/owner/curriculum/lessons/{lesson_id}/versions")
 def owner_curriculum_review_versions(lesson_id:str,user=Depends(require_permission("academy.manage"))):

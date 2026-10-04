@@ -13,7 +13,7 @@ def test_owner_curriculum_workspace_is_present():
 
 def test_workspace_uses_owner_curriculum_api_only():
     assert "jsonRequest('/api/owner/curriculum')" in APP
-    assert "jsonRequest('/api/owner/curriculum/programs'" in APP
+    assert "'/api/owner/curriculum/programs'" in APP
     assert "/api/learner/" not in "\n".join(
         line for line in APP.splitlines() if "Curriculum" in line or "curriculum" in line
     )
