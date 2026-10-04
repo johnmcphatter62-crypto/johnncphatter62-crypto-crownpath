@@ -462,3 +462,33 @@ def curriculum_completion_dashboard(db, user: dict) -> dict:
         "migration_executed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_content_gaps(db, user: dict) -> dict:
+    """Separate missing lesson content from content awaiting approval."""
+    require_owner(user)
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+    versions_by_lesson = {}
+    for version in versions:
+        versions_by_lesson.setdefault(version.lesson_id, []).append(version)
+    approved_lesson_ids = {version.lesson_id for version in versions if version.approved}
+    needs_content = []
+    awaiting_approval = []
+    for lesson in lessons:
+        lesson_versions = versions_by_lesson.get(lesson.id, [])
+        if not lesson_versions:
+            needs_content.append({"lesson_id": lesson.id, "title": lesson.title, "unit_id": lesson.unit_id})
+        elif lesson.id not in approved_lesson_ids:
+            awaiting_approval.append({"lesson_id": lesson.id, "title": lesson.title, "unit_id": lesson.unit_id, "saved_versions": len(lesson_versions)})
+    return {
+        "read_only": True,
+        "status": "CLEAR" if not needs_content and not awaiting_approval else "WORK_REMAINING",
+        "needs_content_count": len(needs_content),
+        "awaiting_approval_count": len(awaiting_approval),
+        "needs_content": needs_content,
+        "awaiting_approval": awaiting_approval,
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
