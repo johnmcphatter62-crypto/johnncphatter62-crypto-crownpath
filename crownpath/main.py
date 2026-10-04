@@ -508,6 +508,17 @@ def owner_curriculum_review_versions(lesson_id:str,user=Depends(require_permissi
     finally:
         db.close()
 
+@app.get("/api/owner/curriculum/progress-summary")
+def owner_curriculum_progress_summary(user=Depends(require_permission("academy.manage"))):
+    from crownpath import owner_curriculum
+    db=session()
+    try:
+        return owner_curriculum.curriculum_progress_summary(db,user)
+    except PermissionError as exc:
+        raise HTTPException(403,str(exc))
+    finally:
+        db.close()
+
 @app.get("/api/owner/curriculum/migration-readiness")
 def owner_curriculum_migration_readiness(user=Depends(require_permission("academy.manage"))):
     from crownpath import owner_curriculum
