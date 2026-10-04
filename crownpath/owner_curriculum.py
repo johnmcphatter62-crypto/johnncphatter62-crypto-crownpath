@@ -462,3 +462,35 @@ def curriculum_completion_dashboard(db, user: dict) -> dict:
         "migration_executed": False,
         "learner_release_authorized": False,
     }
+
+
+def curriculum_review_queue(db, user: dict) -> dict:
+    """List lessons needing Owner review without changing curriculum state."""
+    require_owner(user)
+    lessons = db.query(CurriculumLesson).all()
+    versions = db.query(CurriculumLessonVersion).all()
+    approved_lesson_ids = {v.lesson_id for v in versions if v.approved}
+    versions_by_lesson = {}
+    for version in versions:
+        versions_by_lesson.setdefault(version.lesson_id, []).append(version)
+    queue = []
+    for lesson in lessons:
+        if lesson.id in approved_lesson_ids:
+            continue
+        lesson_versions = versions_by_lesson.get(lesson.id, [])
+        queue.append({
+            "lesson_id": lesson.id,
+            "title": lesson.title,
+            "unit_id": lesson.unit_id,
+            "saved_versions": len(lesson_versions),
+            "review_state": "READY_FOR_REVIEW" if lesson_versions else "CONTENT_NEEDED",
+        })
+    return {
+        "read_only": True,
+        "status": "CLEAR" if not queue else "REVIEW_REQUIRED",
+        "queue_count": len(queue),
+        "queue": queue,
+        "activation_performed": False,
+        "migration_executed": False,
+        "learner_release_authorized": False,
+    }
