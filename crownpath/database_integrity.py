@@ -78,3 +78,35 @@ def inspect_database(engine) -> dict:
             }
         finally:
             transaction.rollback()
+
+
+def verification_record(inspection: dict | None = None) -> dict:
+    """Build a non-mutating verification record without asserting a pass."""
+    inspection = inspection or {}
+    missing_core = list(inspection.get("core_tables_missing") or [])
+    has_live_inspection = bool(inspection)
+    core_complete = (
+        has_live_inspection
+        and inspection.get("core_tables_present") == inspection.get("core_tables_expected")
+        and not missing_core
+    )
+    return {
+        "verification_status": "UNVERIFIED",
+        "verified": False,
+        "record_integrity_verified": False,
+        "migration_authorized": False,
+        "activation_authorized": False,
+        "inspection_attached": has_live_inspection,
+        "read_only_inspection": inspection.get("read_only") is True if has_live_inspection else False,
+        "core_schema_complete": core_complete,
+        "alembic_version": inspection.get("alembic_version"),
+        "aggregate_counts": inspection.get("aggregate_counts", {}),
+        "required_evidence": [
+            "Read-only inspection of a restored CrownPath database.",
+            "Expected core tables present with no unexplained schema loss.",
+            "Aggregate record counts reviewed for plausibility.",
+            "Backup or PITR source identified and restore procedure documented.",
+            "Owner review recorded before any production migration is considered.",
+        ],
+        "note": "This record does not verify restored record integrity by itself.",
+    }
