@@ -339,3 +339,28 @@ def activation_plan_preview(db, user: dict) -> dict:
         "steps": steps,
         "blockers": blockers,
     }
+
+
+def migration_readiness_dashboard(db, user: dict) -> dict:
+    """Consolidate Owner migration-readiness state without executing anything."""
+    require_owner(user)
+    from crownpath.database_integrity import (
+        migration_authorization_gate,
+        recovery_evidence_checklist,
+        verification_record,
+    )
+    integrity = verification_record()
+    recovery = recovery_evidence_checklist()
+    gate = migration_authorization_gate(verification=integrity)
+    curriculum = curriculum_readiness(db, user)
+    return {
+        "read_only": True,
+        "overall_status": "BLOCKED" if not gate["migration_authorized"] else "AUTHORIZED_FOR_SEPARATE_OPERATION",
+        "integrity": integrity,
+        "recovery": recovery,
+        "migration_gate": gate,
+        "curriculum": curriculum,
+        "migration_executed": False,
+        "activation_performed": False,
+        "learner_release_authorized": False,
+    }
