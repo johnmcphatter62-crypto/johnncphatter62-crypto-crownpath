@@ -88,7 +88,7 @@ async function loadCurriculumReadiness(){
   try{
     const data=await jsonRequest('/api/owner/curriculum/readiness');
     (data.checks||[]).forEach(item=>list.append(academyItem(item.label,item.ready?`Ready • ${item.count}`:`Missing • ${item.count}`)));
-    list.append(academyItem(data.ready_for_activation_review?'Ready for Owner activation review':'Not ready for activation review','This check does not activate or publish curriculum.'));
+    list.append(academyItem(data.ready_for_activation_review?'Ready for Owner activation review':'Not ready for activation review','This check does not activate curriculum or open learner access.'));
   }catch(e){curriculumMessage.textContent=e.message}
 }
 async function loadCurriculumApprovalHistory(){
