@@ -163,3 +163,16 @@ class PracticalAssessment(Base):
     decision: Mapped[str]=mapped_column(String(30),nullable=False,default="REVIEW_REQUIRED")
     review_note: Mapped[str|None]=mapped_column(Text)
     reviewed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
+
+class AssessmentEvidenceRecord(Base):
+    """Server-issued evidence reference metadata; no image or video bytes."""
+    __tablename__="assessment_evidence_records"
+    evidence_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    learner_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False,index=True)
+    evidence_type: Mapped[str]=mapped_column(String(30),nullable=False)
+    storage_reference: Mapped[str]=mapped_column(String(255),nullable=False)
+    consent_confirmed: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    revoked: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
