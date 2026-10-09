@@ -63,3 +63,16 @@ def test_postgres_rejects_wrong_lesson_without_evidence_row(db_records):
     with pytest.raises(EvidenceStorageVerificationDenied):
         commit_evidence_registration(db, **kwargs)
     assert db.scalar(select(AssessmentEvidenceRecord).where(AssessmentEvidenceRecord.storage_reference == reference)) is None
+
+
+def test_postgres_rejects_duplicate_storage_registration(db_records):
+    from sqlalchemy.exc import IntegrityError
+
+    db, learner, reference = db_records
+    first = commit_evidence_registration(db, **arguments(db, learner, reference))
+    assert first.storage_reference == reference
+    with pytest.raises(IntegrityError):
+        commit_evidence_registration(db, **arguments(db, learner, reference))
+    assert db.scalar(select(AssessmentEvidenceRecord).where(
+        AssessmentEvidenceRecord.storage_reference == reference
+    )).evidence_id == first.evidence_id
