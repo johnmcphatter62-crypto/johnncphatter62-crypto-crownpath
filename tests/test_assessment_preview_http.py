@@ -72,3 +72,13 @@ def test_out_of_range_score_rejected(_learner, _authorized):
         payload(competency_scores={"consultation": 5}),
     )
     assert response.status_code == 422
+
+
+def test_unauthenticated_preview_denied():
+    app.dependency_overrides.pop(current_user, None)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/instructor/learners/learner/assessments/preview",
+            json=payload(),
+        )
+    assert response.status_code == 401
