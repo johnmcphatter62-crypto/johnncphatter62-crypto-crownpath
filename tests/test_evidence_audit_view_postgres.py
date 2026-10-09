@@ -60,3 +60,48 @@ def test_history_limit_applies_to_database_results(evidence_db):
     )
     assert len(history) == 2
     assert all(set(item) == {"action", "result", "occurred_at"} for item in history)
+
+
+def test_history_returns_newest_events_in_chronological_order(evidence_db):
+    from datetime import datetime, timedelta, timezone
+    from crownpath.models import AuditEvent
+
+    db, learner, _, suffix = evidence_db
+    ref = f"privacy-order-{suffix}"
+    add_evidence(db, ref, learner)
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for index in range(5):
+        db.add(AuditEvent(
+            user_id=learner,
+            action="ASSESSMENT_EVIDENCE_REVOKED",
+            category="ASSESSMENT",
+            resource_type="EVIDENCE",
+            resource_id=ref,
+            result="SUCCESS",
+            created_at=base + timedelta(minutes=index),
+        ))
+    db.add(AuditEvent(
+        user_id=learner,
+        action="UNRELATED_ACTION",
+        category="ASSESSMENT",
+        resource_type="EVIDENCE",
+        resource_id=ref,
+        result="SUCCESS",
+        created_at=base + timedelta(days=1),
+    ))
+    db.flush()
+    history = evidence_revocation_history(
+        db, evidence_id=ref, actor_id=learner, actor_role="BARBER", limit=2
+    )
+    assert [item["occurred_at"] for item in history] == [
+        (base + timedelta(minutes=index)).isoformat() for index in (3, 4)
+    ]
+
+
+def test_missing_evidence_history_is_not_disclosed(evidence_db):
+    db, learner, _, suffix = evidence_db
+    with pytest.raises(EvidenceAuditAccessDenied):
+        evidence_revocation_history(
+            db, evidence_id=f"nonexistent-{suffix}",
+            actor_id=learner, actor_role="BARBER",
+        )
