@@ -176,3 +176,15 @@ class AssessmentEvidenceRecord(Base):
     consent_confirmed: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
     revoked: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
+
+class EvidenceStorageObject(Base):
+    """Backend-issued storage metadata, never authoritative from client input."""
+    __tablename__="evidence_storage_objects"
+    storage_reference: Mapped[str]=mapped_column(String(255),primary_key=True)
+    learner_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False)
+    evidence_type: Mapped[str]=mapped_column(String(30),nullable=False)
+    upload_complete: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    revoked: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
