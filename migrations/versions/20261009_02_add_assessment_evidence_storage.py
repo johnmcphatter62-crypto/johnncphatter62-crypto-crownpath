@@ -43,7 +43,7 @@ def upgrade():
         sa.Column("learner_id", sa.String(64), sa.ForeignKey("users.user_id"), nullable=False),
         sa.Column("lesson_id", sa.String(100), nullable=False),
         sa.Column("evidence_type", sa.String(30), nullable=False),
-        sa.Column("storage_reference", sa.String(255), nullable=False),
+        sa.Column("storage_reference", sa.String(255), nullable=False, unique=True),
         sa.Column("consent_confirmed", sa.Boolean(), nullable=False),
         sa.Column("revoked", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
