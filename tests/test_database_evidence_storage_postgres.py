@@ -31,6 +31,10 @@ def db_records():
         yield db, learner_id, reference
     finally:
         db.rollback()
+        db.query(AssessmentEvidenceRecord).filter(AssessmentEvidenceRecord.storage_reference == reference).delete(synchronize_session=False)
+        db.query(EvidenceStorageObject).filter(EvidenceStorageObject.storage_reference == reference).delete(synchronize_session=False)
+        db.query(User).filter(User.user_id == learner_id).delete(synchronize_session=False)
+        db.commit()
         db.close()
 
 
