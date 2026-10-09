@@ -5,7 +5,7 @@ must never be used. This module does not upload files or issue approvals.
 """
 from sqlalchemy import select
 
-from crownpath.models import AssessmentEvidenceRecord
+from crownpath.models import AssessmentEvidenceRecord, EvidenceStorageObject
 
 
 def lookup_verified_evidence_owners(db, *, learner_id: str, lesson_id: str, references: list[str]) -> dict[str, str]:
@@ -14,7 +14,15 @@ def lookup_verified_evidence_owners(db, *, learner_id: str, lesson_id: str, refe
     if len(references) != len(set(references)):
         return {}
     records = db.scalars(
-        select(AssessmentEvidenceRecord).where(
+        select(AssessmentEvidenceRecord).join(
+            EvidenceStorageObject,
+            AssessmentEvidenceRecord.storage_reference == EvidenceStorageObject.storage_reference,
+        ).where(
+            EvidenceStorageObject.revoked.is_(False),
+            EvidenceStorageObject.upload_complete.is_(True),
+            EvidenceStorageObject.learner_id == learner_id,
+            EvidenceStorageObject.lesson_id == lesson_id,
+            EvidenceStorageObject.evidence_type == AssessmentEvidenceRecord.evidence_type,
             AssessmentEvidenceRecord.evidence_id.in_(references),
             AssessmentEvidenceRecord.learner_id == learner_id,
             AssessmentEvidenceRecord.lesson_id == lesson_id,
