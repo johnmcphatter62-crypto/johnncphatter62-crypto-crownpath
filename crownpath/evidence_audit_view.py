@@ -11,7 +11,7 @@ def evidence_revocation_history(db, *, evidence_id: str, actor_id: str, actor_ro
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("Audit history limit must be between 1 and 100.")
     events = list_evidence_revocation_audit(
-        db, evidence_id=evidence_id, actor_id=actor_id, actor_role=actor_role
+        db, evidence_id=evidence_id, actor_id=actor_id, actor_role=actor_role, limit=limit
     )
     return [
         {
@@ -19,5 +19,5 @@ def evidence_revocation_history(db, *, evidence_id: str, actor_id: str, actor_ro
             "result": event.result,
             "occurred_at": event.created_at.isoformat(),
         }
-        for event in events[-limit:]
+        for event in events
     ]
