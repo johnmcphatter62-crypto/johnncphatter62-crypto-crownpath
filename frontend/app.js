@@ -33,7 +33,19 @@ function clearSession(){resetMfaLogin();sessionCard.hidden=true;mfaSetupPanel.hi
 async function checkSession(){try{showSession(await jsonRequest('/api/auth/me'))}catch(_){clearSession()}}
 async function checkOwnerActivation(){try{const data=await jsonRequest('/api/auth/owner-activation/status');ownerActivation.hidden=!data.available}catch(_){ownerActivation.hidden=true}}
 function academyItem(title,meta){const wrap=document.createElement('div');wrap.className='session-card';wrap.style.marginTop='10px';const strong=document.createElement('strong');strong.textContent=title;const span=document.createElement('span');span.textContent=meta;wrap.append(strong,document.createElement('br'),span);return wrap}
-function lessonItem(item){const wrap=academyItem(item.title,`${String(item.status).replaceAll('_',' ')} • ${item.progress||0}% complete`);const controls=document.createElement('div');controls.className='actions';controls.style.marginTop='8px';const open=document.createElement('button');open.type='button';open.textContent=item.status==='NOT_STARTED'?'Open Lesson':item.status==='COMPLETED'?'Review Lesson':'Continue Lesson';open.addEventListener('click',()=>openLesson(item.lesson_id));controls.append(open);wrap.append(controls);return wrap}
+function createLessonProgress(item){
+  const wrapper=document.createElement('div');
+  const label=document.createElement('span');
+  const percent=Math.min(100,Math.max(0,Number(item.progress)||0));
+  label.textContent=`Lesson steps completed: ${percent}%`;
+  const progress=document.createElement('progress');
+  progress.max=100;
+  progress.value=percent;
+  progress.setAttribute('aria-label',`${item.title} lesson-step progress`);
+  wrapper.append(label,document.createElement('br'),progress);
+  return wrapper;
+}
+function lessonItem(item){const wrap=academyItem(item.title,`${String(item.status).replaceAll('_',' ')} • ${item.progress||0}% complete`);wrap.append(createLessonProgress(item));const controls=document.createElement('div');controls.className='actions';controls.style.marginTop='8px';const open=document.createElement('button');open.type='button';open.textContent=item.status==='NOT_STARTED'?'Open Lesson':item.status==='COMPLETED'?'Review Lesson':'Continue Lesson';open.addEventListener('click',()=>openLesson(item.lesson_id));controls.append(open);wrap.append(controls);return wrap}
 function fillList(element,items){element.innerHTML='';(items||[]).forEach(text=>{const li=document.createElement('li');li.textContent=text;element.append(li)})}
 function renderLessonSteps(lesson){const list=document.querySelector('#lessonSteps');list.innerHTML='';const steps=lesson.content?.steps||[];const completed=new Set(lesson.completed_steps||[]);steps.forEach((text,index)=>{const stepNumber=index+1;const li=document.createElement('li');li.style.marginBottom='10px';const label=document.createElement('span');label.textContent=text+' ';const button=document.createElement('button');button.type='button';button.textContent=completed.has(stepNumber)?'Step Completed':'Mark Step Complete';button.disabled=completed.has(stepNumber)||lesson.status==='COMPLETED';button.addEventListener('click',()=>completeLessonStep(lesson.lesson_id,stepNumber,button));li.append(label,button);list.append(li)})}
 function showLesson(lesson){activeLessonId=lesson.lesson_id;const content=lesson.content||{};document.querySelector('#lessonTitle').textContent=lesson.title;document.querySelector('#lessonSummary').textContent=content.summary||'';fillList(document.querySelector('#lessonObjectives'),content.objectives);renderLessonSteps(lesson);document.querySelector('#lessonSafety').textContent=content.safety_note||'';const complete=document.querySelector('#lessonComplete');complete.disabled=true;complete.textContent=lesson.status==='COMPLETED'?'Lesson Completed':'Complete each step above to finish';lessonViewer.hidden=false;lessonViewer.scrollIntoView({behavior:'smooth',block:'start'})}
