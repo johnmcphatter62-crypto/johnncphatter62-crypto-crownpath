@@ -18,6 +18,8 @@ def test_committed_revocation_persists_with_audit(evidence_db):
         EvidenceStorageObject.storage_reference == f"test-only/{ref}"
     )).revoked
     assert db.scalar(select(AuditEvent).where(AuditEvent.resource_id == ref)).action == "ASSESSMENT_EVIDENCE_REVOKED"
+    assert commit_evidence_revocation(db, evidence_id=ref, actor_id=learner, actor_role="BARBER") is False
+    assert len(db.scalars(select(AuditEvent).where(AuditEvent.resource_id == ref)).all()) == 1
     db.query(AuditEvent).filter(AuditEvent.resource_id == ref).delete()
     db.query(AssessmentEvidenceRecord).filter(AssessmentEvidenceRecord.evidence_id == ref).delete()
     db.query(EvidenceStorageObject).filter(EvidenceStorageObject.storage_reference == f"test-only/{ref}").delete()
@@ -32,3 +34,25 @@ def test_denied_revocation_rolls_back_without_audit(evidence_db):
     with pytest.raises(EvidenceRevocationDenied):
         commit_evidence_revocation(db, evidence_id=ref, actor_id=other, actor_role="BARBER")
     assert db.scalars(select(AuditEvent).where(AuditEvent.resource_id == ref)).all() == []
+
+
+def test_denied_request_does_not_change_committed_evidence(evidence_db):
+    db, learner, other, suffix = evidence_db
+    ref = f"committed-denied-{suffix}"
+    add_evidence(db, ref, learner)
+    db.commit()
+    try:
+        with pytest.raises(EvidenceRevocationDenied):
+            commit_evidence_revocation(db, evidence_id=ref, actor_id=other, actor_role="BARBER")
+        assert db.scalar(select(AssessmentEvidenceRecord).where(
+            AssessmentEvidenceRecord.evidence_id == ref
+        )).revoked is False
+        assert db.scalar(select(EvidenceStorageObject).where(
+            EvidenceStorageObject.storage_reference == f"test-only/{ref}"
+        )).revoked is False
+        assert db.scalars(select(AuditEvent).where(AuditEvent.resource_id == ref)).all() == []
+    finally:
+        db.query(AssessmentEvidenceRecord).filter(AssessmentEvidenceRecord.evidence_id == ref).delete()
+        db.query(EvidenceStorageObject).filter(EvidenceStorageObject.storage_reference == f"test-only/{ref}").delete()
+        db.query(User).filter(User.user_id.in_([learner, other])).delete(synchronize_session=False)
+        db.commit()
