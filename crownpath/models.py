@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from crownpath.db_engine import Base
@@ -146,6 +146,11 @@ class AudioZoneDevice(Base):
 class PracticalAssessment(Base):
     """Instructor-reviewed competency record; not a professional license."""
     __tablename__="practical_assessments"
+    __table_args__=(
+        CheckConstraint("knowledge_percent >= 0 AND knowledge_percent <= 100", name="ck_practical_assessment_knowledge_range"),
+        CheckConstraint("decision IN ('APPROVED', 'REJECTED', 'REVIEW_REQUIRED')", name="ck_practical_assessment_decision"),
+        CheckConstraint("learner_id <> reviewer_id", name="ck_practical_assessment_distinct_reviewer"),
+    )
     assessment_id: Mapped[str]=mapped_column(String(64),primary_key=True)
     learner_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
     reviewer_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
