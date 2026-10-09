@@ -60,6 +60,11 @@ class InstructorRequestCreate(BaseModel):
 class InstructorReviewRequest(BaseModel):
     decision:str
     note:str|None=Field(default=None,max_length=1000)
+class PracticalAssessmentPreviewRequest(BaseModel):
+    knowledge_percent:int=Field(ge=0,le=100)
+    competency_scores:dict[str,int]=Field(min_length=1,max_length=50)
+    safety_gates:dict[str,bool]=Field(min_length=1,max_length=50)
+
 class CurriculumProgramCreateRequest(BaseModel):
     title:str=Field(min_length=2,max_length=200)
     slug:str=Field(min_length=1,max_length=120)
@@ -405,6 +410,30 @@ def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(req
 def avatar_startup(role:str):
     role=role.upper(); messages={"OWNER":"Welcome to CrownPath. I can guide you through operations, Academy, security, audio, Avatar & Bot Builder, and launch readiness.","INSTRUCTOR":"Welcome, Instructor. I can guide your teaching, digital content, Avatar & Bot Builder, and classroom tools.","BARBER":"Welcome to your Barber pathway. Your CrownPath guide can support lessons, scalp-camera education, practical skills, and bot-builder training.","COSMETOLOGY_PRO":"Welcome to your Cosmetology pathway. Your CrownPath guide can support beauty, scalp, makeup, nails, wellness, and bot-builder lessons.","HOME_CARE":"Welcome to your Home Care pathway. Your CrownPath guide can support safety, communication, client experience, and bot-builder lessons."}
     return {"role":role,"message":messages.get(role,"Welcome to CrownPath."),"guide_enabled":True}
+@app.post("/api/instructor/learners/{learner_id}/assessments/preview")
+def preview_practical_assessment(learner_id:str,payload:PracticalAssessmentPreviewRequest,user=Depends(current_user)):
+    """Read-only preview: never grants approval or writes an assessment."""
+    from crownpath.instructor_review_policy import can_review_assigned_learner
+    from crownpath.assessment_policy import evaluate_practical_assessment
+    if not can_review_assigned_learner(user,learner_id):
+        raise HTTPException(403,"Assessment review not authorized.")
+    learner=get_user_by_id(learner_id)
+    if not learner or not learner.get("active") or learner.get("role","").upper() not in {"HOME_CARE","BARBER","COSMETOLOGY_PRO"}:
+        raise HTTPException(404,"Active learner not found.")
+    try:
+        result=evaluate_practical_assessment(payload.competency_scores,payload.safety_gates,payload.knowledge_percent)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+    return {
+        "preview_only":True,
+        "approval_recorded":False,
+        "eligible_for_instructor_approval":result.eligible_for_instructor_approval,
+        "failed_competencies":result.failed_competencies,
+        "failed_safety_gates":result.failed_safety_gates,
+        "knowledge_passed":result.knowledge_passed,
+        "notice":"Preview only. Evidence verification and instructor approval are not recorded.",
+    }
+
 @app.get("/api/academy")
 def academy(user=Depends(require_permission("academy.view"))): return {"modules":[{"title":"Professional Foundations","status":"READY"},{"title":"Hair, Scalp & Imaging Science","status":"READY"},{"title":"Beauty, Grooming & Practical Skills","status":"READY"},{"title":"Wellness, Massage & Fitness Foundations","status":"READY"},{"title":"Avatar & Bot Builder Lab","status":"READY"},{"title":"Business & Client Experience","status":"READY"}]}
 @app.get("/api/digital-content")

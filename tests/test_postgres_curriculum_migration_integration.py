@@ -24,6 +24,7 @@ CORE_TABLES = {
     "audio_devices",
     "audio_zone_devices",
 }
+ASSESSMENT_TABLES = {"practical_assessments", "assessment_evidence_records", "evidence_storage_objects"}
 CURRICULUM_TABLES = {
     "curriculum_programs",
     "curriculum_courses",
@@ -82,12 +83,15 @@ def test_existing_core_schema_without_history_upgrades_and_downgrades(postgres_c
     assert CORE_TABLES.issubset(upgraded)
     assert CURRICULUM_TABLES.issubset(upgraded)
     assert "alembic_version" in upgraded
-    assert upgraded == CORE_TABLES | CURRICULUM_TABLES | {"alembic_version"}
+    assert upgraded == CORE_TABLES | CURRICULUM_TABLES | ASSESSMENT_TABLES | {"alembic_version"}
 
     with engine.connect() as connection:
         revision = connection.scalar(sa.text("SELECT version_num FROM alembic_version"))
-    assert revision == "20260928_01"
+    assert revision == "20261009_02"
 
+    command.downgrade(_alembic_config(), "20260928_01")
+    after_assessment_downgrade = set(sa.inspect(engine).get_table_names())
+    assert after_assessment_downgrade == CORE_TABLES | CURRICULUM_TABLES | {"alembic_version"}
     command.downgrade(_alembic_config(), "20260928_00")
 
     downgraded = set(sa.inspect(engine).get_table_names())

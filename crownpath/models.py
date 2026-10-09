@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from crownpath.db_engine import Base
@@ -140,4 +140,51 @@ class AudioZoneDevice(Base):
     device_id: Mapped[str]=mapped_column(String(64),ForeignKey("audio_devices.device_id"),nullable=False,index=True)
     primary_device: Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
     enabled: Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
+
+class PracticalAssessment(Base):
+    """Instructor-reviewed competency record; not a professional license."""
+    __tablename__="practical_assessments"
+    __table_args__=(
+        CheckConstraint("knowledge_percent >= 0 AND knowledge_percent <= 100", name="ck_practical_assessment_knowledge_range"),
+        CheckConstraint("decision IN ('APPROVED', 'REJECTED', 'REVIEW_REQUIRED')", name="ck_practical_assessment_decision"),
+        CheckConstraint("learner_id <> reviewer_id", name="ck_practical_assessment_distinct_reviewer"),
+    )
+    assessment_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    learner_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    reviewer_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False,index=True)
+    rubric_version: Mapped[str]=mapped_column(String(40),nullable=False)
+    knowledge_percent: Mapped[int]=mapped_column(Integer,nullable=False)
+    competency_scores_json: Mapped[str]=mapped_column(Text,nullable=False)
+    safety_gates_json: Mapped[str]=mapped_column(Text,nullable=False)
+    evidence_refs_json: Mapped[str]=mapped_column(Text,nullable=False)
+    decision: Mapped[str]=mapped_column(String(30),nullable=False,default="REVIEW_REQUIRED")
+    review_note: Mapped[str|None]=mapped_column(Text)
+    reviewed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
+
+class AssessmentEvidenceRecord(Base):
+    """Server-issued evidence reference metadata; no image or video bytes."""
+    __tablename__="assessment_evidence_records"
+    evidence_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    learner_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False,index=True)
+    evidence_type: Mapped[str]=mapped_column(String(30),nullable=False)
+    storage_reference: Mapped[str]=mapped_column(String(255),nullable=False,unique=True)
+    consent_confirmed: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    revoked: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
+
+class EvidenceStorageObject(Base):
+    """Backend-issued storage metadata, never authoritative from client input."""
+    __tablename__="evidence_storage_objects"
+    storage_reference: Mapped[str]=mapped_column(String(255),primary_key=True)
+    learner_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False)
+    evidence_type: Mapped[str]=mapped_column(String(30),nullable=False)
+    upload_complete: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
+    revoked: Mapped[bool]=mapped_column(Boolean,nullable=False,default=False)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
