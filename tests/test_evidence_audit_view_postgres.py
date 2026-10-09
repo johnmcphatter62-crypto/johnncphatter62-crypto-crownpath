@@ -37,3 +37,26 @@ def test_empty_audit_history_for_unrevoked_evidence(evidence_db):
     ref = f"privacy-empty-{suffix}"
     add_evidence(db, ref, learner)
     assert evidence_revocation_history(db, evidence_id=ref, actor_id=learner, actor_role="BARBER") == []
+
+
+def test_history_limit_applies_to_database_results(evidence_db):
+    from crownpath.models import AuditEvent
+
+    db, learner, _, suffix = evidence_db
+    ref = f"privacy-bounded-{suffix}"
+    add_evidence(db, ref, learner)
+    for index in range(5):
+        db.add(AuditEvent(
+            user_id=learner,
+            action="ASSESSMENT_EVIDENCE_REVOKED",
+            category="ASSESSMENT",
+            resource_type="EVIDENCE",
+            resource_id=ref,
+            result="SUCCESS",
+        ))
+        db.flush()
+    history = evidence_revocation_history(
+        db, evidence_id=ref, actor_id=learner, actor_role="BARBER", limit=2
+    )
+    assert len(history) == 2
+    assert all(set(item) == {"action", "result", "occurred_at"} for item in history)
