@@ -4,12 +4,12 @@ import pytest
 
 from crownpath.evidence_revocation import EvidenceRevocationDenied
 from crownpath.evidence_revocation_adapter import commit_evidence_revocation
-from crownpath.models import AssessmentEvidenceRecord, AuditEvent, EvidenceStorageObject
+from crownpath.models import AssessmentEvidenceRecord, AuditEvent, EvidenceStorageObject, User
 from test_evidence_registry_postgres import evidence_db, add_evidence
 
 
 def test_committed_revocation_persists_with_audit(evidence_db):
-    db, learner, _, suffix = evidence_db
+    db, learner, other, suffix = evidence_db
     ref = f"committed-revoke-{suffix}"
     add_evidence(db, ref, learner)
     assert commit_evidence_revocation(db, evidence_id=ref, actor_id=learner, actor_role="BARBER")
@@ -21,6 +21,7 @@ def test_committed_revocation_persists_with_audit(evidence_db):
     db.query(AuditEvent).filter(AuditEvent.resource_id == ref).delete()
     db.query(AssessmentEvidenceRecord).filter(AssessmentEvidenceRecord.evidence_id == ref).delete()
     db.query(EvidenceStorageObject).filter(EvidenceStorageObject.storage_reference == f"test-only/{ref}").delete()
+    db.query(User).filter(User.user_id.in_([learner, other])).delete(synchronize_session=False)
     db.commit()
 
 
