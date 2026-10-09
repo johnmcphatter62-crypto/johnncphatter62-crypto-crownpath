@@ -12,8 +12,10 @@ class EvidenceAuditAccessDenied(ValueError):
     pass
 
 
-def list_evidence_revocation_audit(db, *, evidence_id: str, actor_id: str, actor_role: str):
+def list_evidence_revocation_audit(db, *, evidence_id: str, actor_id: str, actor_role: str, limit: int = 25):
     """Return chronological revocation events for an owner or active admin."""
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError("Audit history limit must be between 1 and 100.")
     if not isinstance(evidence_id, str) or not evidence_id.strip() or len(evidence_id) > 64:
         raise EvidenceAuditAccessDenied("Valid evidence ID required.")
     if not isinstance(actor_id, str) or not actor_id.strip() or not isinstance(actor_role, str):
@@ -31,5 +33,5 @@ def list_evidence_revocation_audit(db, *, evidence_id: str, actor_id: str, actor
             AuditEvent.category == "ASSESSMENT",
             AuditEvent.action == "ASSESSMENT_EVIDENCE_REVOKED",
             AuditEvent.result == "SUCCESS",
-        ).order_by(AuditEvent.created_at, AuditEvent.audit_id)
-    ).all()
+        ).order_by(AuditEvent.created_at.desc(), AuditEvent.audit_id.desc()).limit(limit)
+    ).all()[::-1]
