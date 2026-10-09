@@ -9,7 +9,7 @@ import pytest
 
 from crownpath.database import session
 from crownpath.evidence_registry import lookup_verified_evidence_owners
-from crownpath.models import AssessmentEvidenceRecord, User
+from crownpath.models import AssessmentEvidenceRecord, EvidenceStorageObject, User
 
 
 @pytest.fixture
@@ -34,6 +34,15 @@ def evidence_db():
 
 
 def add_evidence(db, evidence_id, learner_id, lesson_id="consultation", evidence_type="OBSERVATION_NOTE", consent=False, revoked=False):
+    db.add(EvidenceStorageObject(
+        storage_reference=f"test-only/{evidence_id}",
+        learner_id=learner_id,
+        lesson_id=lesson_id,
+        evidence_type=evidence_type,
+        upload_complete=True,
+        revoked=False,
+    ))
+    db.flush()
     db.add(AssessmentEvidenceRecord(
         evidence_id=evidence_id,
         learner_id=learner_id,
@@ -78,3 +87,18 @@ def test_postgres_missing_or_duplicate_references_fail_closed(evidence_db):
     add_evidence(db, ref, learner)
     assert lookup(db, learner, ["missing"]) == {}
     assert lookup(db, learner, [ref, ref]) == {}
+
+
+def test_postgres_revoked_storage_is_not_eligible(evidence_db):
+    from sqlalchemy import select
+
+    db, learner, _, suffix = evidence_db
+    ref = f"storage-revoked-{suffix}"
+    add_evidence(db, ref, learner, evidence_type="PHOTO", consent=True)
+    assert lookup(db, learner, [ref]) == {ref: learner}
+    storage = db.scalar(select(EvidenceStorageObject).where(
+        EvidenceStorageObject.storage_reference == f"test-only/{ref}"
+    ))
+    storage.revoked = True
+    db.flush()
+    assert lookup(db, learner, [ref]) == {}
