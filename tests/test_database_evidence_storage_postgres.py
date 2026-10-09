@@ -21,7 +21,7 @@ def db_records():
     learner_id = f"storage-learner-{suffix}"
     reference = f"storage/{suffix}"
     db.add(User(user_id=learner_id, name="Storage Test", email=f"storage-{suffix}@example.invalid", password_hash="test-only", role="BARBER"))
-    db.add(EvidenceStorageObject(
+    db.flush()  # Ensure learner FK target exists before inserting storage metadata.\n    db.add(EvidenceStorageObject(
         storage_reference=reference, learner_id=learner_id,
         lesson_id="consultation", evidence_type="PHOTO",
         upload_complete=True, revoked=False,
