@@ -38,15 +38,10 @@ def test_rollback_restores_evidence_and_audit(evidence_db):
     db, learner, _, suffix = evidence_db
     ref = f"rollback-{suffix}"
     add_evidence(db, ref, learner)
-    db.commit()
-    try:
-        assert revoke_evidence(db, evidence_id=ref, actor_id=learner, actor_role="BARBER")
-        db.flush()
-        db.rollback()
-        assert not db.scalar(select(AssessmentEvidenceRecord).where(AssessmentEvidenceRecord.evidence_id == ref)).revoked
-        assert not db.scalar(select(EvidenceStorageObject).where(EvidenceStorageObject.storage_reference == f"test-only/{ref}")).revoked
-        assert db.scalars(select(AuditEvent).where(AuditEvent.resource_id == ref)).all() == []
-    finally:
-        db.query(AssessmentEvidenceRecord).filter(AssessmentEvidenceRecord.evidence_id == ref).delete()
-        db.query(EvidenceStorageObject).filter(EvidenceStorageObject.storage_reference == f"test-only/{ref}").delete()
-        db.commit()
+    savepoint = db.begin_nested()
+    assert revoke_evidence(db, evidence_id=ref, actor_id=learner, actor_role="BARBER")
+    db.flush()
+    savepoint.rollback()
+    assert not db.scalar(select(AssessmentEvidenceRecord).where(AssessmentEvidenceRecord.evidence_id == ref)).revoked
+    assert not db.scalar(select(EvidenceStorageObject).where(EvidenceStorageObject.storage_reference == f"test-only/{ref}")).revoked
+    assert db.scalars(select(AuditEvent).where(AuditEvent.resource_id == ref)).all() == []
