@@ -8,6 +8,7 @@ from crownpath.assessment_policy import evaluate_practical_assessment
 from crownpath.assessment_repository import stage_assessment_review
 from crownpath.instructor_review_policy import can_review_assigned_learner
 from crownpath.evidence_ownership import validate_evidence_ownership
+from crownpath.evidence_registry import lookup_verified_evidence_owners
 
 
 class AssessmentReviewDenied(PermissionError):
@@ -29,7 +30,6 @@ def submit_assessment_review(
     competency_scores: dict[str, int],
     safety_gates: dict[str, bool],
     evidence: list[dict],
-    trusted_evidence_owners: dict[str, str] | None = None,
     review_note: str | None = None,
 ):
     if not can_review_assigned_learner(reviewer, learner_id):
@@ -44,7 +44,10 @@ def submit_assessment_review(
         if not result.valid:
             raise AssessmentEvidenceInvalid("; ".join(result.errors))
     references = [item["reference"] for item in evidence]
-    if not validate_evidence_ownership(learner_id, references, trusted_evidence_owners or {}):
+    trusted_owners = lookup_verified_evidence_owners(
+        db, learner_id=learner_id, lesson_id=lesson_id, references=references
+    )
+    if not validate_evidence_ownership(learner_id, references, trusted_owners):
         raise AssessmentEvidenceInvalid("Evidence ownership could not be verified.")
     evaluation = evaluate_practical_assessment(
         competency_scores, safety_gates, knowledge_percent
