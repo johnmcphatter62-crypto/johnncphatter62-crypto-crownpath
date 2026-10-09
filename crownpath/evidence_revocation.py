@@ -5,7 +5,7 @@ caller; only a server-authenticated owner or authorized administrator may invoke
 """
 from sqlalchemy import select
 
-from crownpath.models import AssessmentEvidenceRecord, AuditEvent, EvidenceStorageObject
+from crownpath.models import AssessmentEvidenceRecord, AuditEvent, EvidenceStorageObject, User
 
 
 class EvidenceRevocationDenied(ValueError):
@@ -18,6 +18,9 @@ def revoke_evidence(db, *, evidence_id: str, actor_id: str, actor_role: str):
         raise EvidenceRevocationDenied("Evidence ID required.")
     if not isinstance(actor_id, str) or not actor_id.strip():
         raise EvidenceRevocationDenied("Authenticated actor required.")
+    actor = db.get(User, actor_id)
+    if actor is None or not actor.active or actor.role != actor_role:
+        raise EvidenceRevocationDenied("Active actor identity and role required.")
     record = db.scalar(
         select(AssessmentEvidenceRecord).where(
             AssessmentEvidenceRecord.evidence_id == evidence_id
@@ -25,14 +28,16 @@ def revoke_evidence(db, *, evidence_id: str, actor_id: str, actor_role: str):
     )
     if record is None:
         raise EvidenceRevocationDenied("Evidence not found.")
-    if actor_id != record.learner_id and actor_role != "ADMIN":
+    if actor_id != record.learner_id and actor.role != "ADMIN":
         raise EvidenceRevocationDenied("Not authorized to revoke evidence.")
     storage = db.scalar(
         select(EvidenceStorageObject).where(
             EvidenceStorageObject.storage_reference == record.storage_reference
         ).with_for_update()
     )
-    if storage is None or storage.learner_id != record.learner_id:
+    if (storage is None or storage.learner_id != record.learner_id
+            or storage.lesson_id != record.lesson_id
+            or storage.evidence_type != record.evidence_type):
         raise EvidenceRevocationDenied("Trusted storage metadata missing or mismatched.")
     if record.revoked and storage.revoked:
         return False
