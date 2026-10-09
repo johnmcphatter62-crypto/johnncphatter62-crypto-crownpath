@@ -39,14 +39,14 @@ def request(**changes):
         competency_scores={"consultation": 3},
         safety_gates={"sanitation": True},
         evidence=[{"type": "OBSERVATION_NOTE", "reference": "CP-EV-1", "observation_note": "Safe consultation."}],
-        trusted_evidence_owners={"CP-EV-1": "learner"},
     )
     data.update(changes)
     return data
 
 
+@patch("crownpath.assessment_service.lookup_verified_evidence_owners", return_value={"CP-EV-1": "learner"})
 @patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
-def test_approved_review_commits_assessment_and_audit(_auth):
+def test_approved_review_commits_assessment_and_audit(_auth, _owners):
     db = FakeSession()
     record = submit_assessment_review(db, **request())
     assert record.decision == "APPROVED"
@@ -55,16 +55,18 @@ def test_approved_review_commits_assessment_and_audit(_auth):
     assert db.rollbacks == 0
 
 
+@patch("crownpath.assessment_service.lookup_verified_evidence_owners", return_value={"CP-EV-1": "learner"})
 @patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
-def test_failed_safety_gate_records_rejection(_auth):
+def test_failed_safety_gate_records_rejection(_auth, _owners):
     db = FakeSession()
     record = submit_assessment_review(db, **request(safety_gates={"sanitation": False}))
     assert record.decision == "REJECTED"
     assert db.commits == 1
 
 
+@patch("crownpath.assessment_service.lookup_verified_evidence_owners", return_value={"CP-EV-1": "learner"})
 @patch("crownpath.assessment_service.can_review_assigned_learner", return_value=False)
-def test_unauthorized_reviewer_cannot_write(_auth):
+def test_unauthorized_reviewer_cannot_write(_auth, _owners):
     db = FakeSession()
     with pytest.raises(AssessmentReviewDenied):
         submit_assessment_review(db, **request())
@@ -72,8 +74,9 @@ def test_unauthorized_reviewer_cannot_write(_auth):
     assert db.commits == 0
 
 
+@patch("crownpath.assessment_service.lookup_verified_evidence_owners", return_value={"CP-EV-1": "learner"})
 @patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
-def test_invalid_evidence_cannot_write(_auth):
+def test_invalid_evidence_cannot_write(_auth, _owners):
     db = FakeSession()
     with pytest.raises(AssessmentEvidenceInvalid):
         submit_assessment_review(db, **request(evidence=[]))
@@ -81,8 +84,9 @@ def test_invalid_evidence_cannot_write(_auth):
     assert db.commits == 0
 
 
+@patch("crownpath.assessment_service.lookup_verified_evidence_owners", return_value={"CP-EV-1": "learner"})
 @patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
-def test_commit_failure_rolls_back(_auth):
+def test_commit_failure_rolls_back(_auth, _owners):
     db = FakeSession(fail_commit=True)
     with pytest.raises(RuntimeError, match="Simulated commit failure"):
         submit_assessment_review(db, **request())
@@ -90,19 +94,23 @@ def test_commit_failure_rolls_back(_auth):
     assert db.rollbacks == 1
 
 
+@patch("crownpath.assessment_service.lookup_verified_evidence_owners", return_value={"CP-EV-1": "learner"})
 @patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
-def test_missing_trusted_ownership_denies_write(_auth):
+def test_missing_trusted_ownership_denies_write(_auth, _owners):
+    _owners.return_value = {}
     db = FakeSession()
     with pytest.raises(AssessmentEvidenceInvalid, match="ownership"):
-        submit_assessment_review(db, **request(trusted_evidence_owners=None))
+        submit_assessment_review(db, **request())
     assert db.added == []
     assert db.commits == 0
 
 
+@patch("crownpath.assessment_service.lookup_verified_evidence_owners", return_value={"CP-EV-1": "learner"})
 @patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
-def test_wrong_learner_ownership_denies_write(_auth):
+def test_wrong_learner_ownership_denies_write(_auth, _owners):
+    _owners.return_value = {"CP-EV-1": "someone-else"}
     db = FakeSession()
     with pytest.raises(AssessmentEvidenceInvalid, match="ownership"):
-        submit_assessment_review(db, **request(trusted_evidence_owners={"CP-EV-1": "someone-else"}))
+        submit_assessment_review(db, **request())
     assert db.added == []
     assert db.commits == 0
