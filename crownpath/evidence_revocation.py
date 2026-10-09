@@ -18,6 +18,8 @@ def revoke_evidence(db, *, evidence_id: str, actor_id: str, actor_role: str):
         raise EvidenceRevocationDenied("Evidence ID required.")
     if not isinstance(actor_id, str) or not actor_id.strip():
         raise EvidenceRevocationDenied("Authenticated actor required.")
+    if not isinstance(actor_role, str) or not actor_role.strip():
+        raise EvidenceRevocationDenied("Actor role required.")
     actor = db.get(User, actor_id)
     if actor is None or not actor.active or actor.role != actor_role:
         raise EvidenceRevocationDenied("Active actor identity and role required.")
