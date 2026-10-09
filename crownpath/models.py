@@ -141,3 +141,20 @@ class AudioZoneDevice(Base):
     primary_device: Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
     enabled: Mapped[bool]=mapped_column(Boolean,nullable=False,default=True)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
+
+
+class PracticalAssessment(Base):
+    """Instructor-reviewed competency record; not a professional license."""
+    __tablename__="practical_assessments"
+    assessment_id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    learner_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    reviewer_id: Mapped[str]=mapped_column(String(64),ForeignKey("users.user_id"),nullable=False,index=True)
+    lesson_id: Mapped[str]=mapped_column(String(100),nullable=False,index=True)
+    rubric_version: Mapped[str]=mapped_column(String(40),nullable=False)
+    knowledge_percent: Mapped[int]=mapped_column(Integer,nullable=False)
+    competency_scores_json: Mapped[str]=mapped_column(Text,nullable=False)
+    safety_gates_json: Mapped[str]=mapped_column(Text,nullable=False)
+    evidence_refs_json: Mapped[str]=mapped_column(Text,nullable=False)
+    decision: Mapped[str]=mapped_column(String(30),nullable=False,default="REVIEW_REQUIRED")
+    review_note: Mapped[str|None]=mapped_column(Text)
+    reviewed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
