@@ -7,6 +7,7 @@ No file bytes are uploaded and no credential is issued.
 from uuid import uuid4
 
 from crownpath.models import AssessmentEvidenceRecord
+from crownpath.evidence_storage_verification import verify_storage_metadata
 
 ALLOWED_TYPES = frozenset({"OBSERVATION_NOTE", "PHOTO", "VIDEO", "DOCUMENT"})
 
@@ -19,6 +20,7 @@ def stage_evidence_registration(
     db, *, authenticated_learner: dict, lesson_id: str,
     evidence_type: str, verified_storage_reference: str,
     consent_confirmed: bool = False,
+    trusted_storage_metadata: dict | None = None,
 ):
     learner_id = authenticated_learner.get("user_id") if isinstance(authenticated_learner, dict) else None
     role = authenticated_learner.get("role", "").upper() if isinstance(authenticated_learner, dict) else ""
@@ -36,6 +38,13 @@ def stage_evidence_registration(
         raise EvidenceRegistrationDenied("Consent flag must be boolean.")
     if evidence_type in {"PHOTO", "VIDEO"} and not consent_confirmed:
         raise EvidenceRegistrationDenied("Explicit media consent confirmation required.")
+    verify_storage_metadata(
+        learner_id=learner_id,
+        lesson_id=lesson_id,
+        evidence_type=evidence_type,
+        storage_reference=verified_storage_reference,
+        trusted_metadata=trusted_storage_metadata,
+    )
     record = AssessmentEvidenceRecord(
         evidence_id=f"ev-{uuid4().hex}",
         learner_id=learner_id,
