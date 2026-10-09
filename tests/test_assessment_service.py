@@ -39,6 +39,7 @@ def request(**changes):
         competency_scores={"consultation": 3},
         safety_gates={"sanitation": True},
         evidence=[{"type": "OBSERVATION_NOTE", "reference": "CP-EV-1", "observation_note": "Safe consultation."}],
+        trusted_evidence_owners={"CP-EV-1": "learner"},
     )
     data.update(changes)
     return data
@@ -87,3 +88,21 @@ def test_commit_failure_rolls_back(_auth):
         submit_assessment_review(db, **request())
     assert db.commits == 1
     assert db.rollbacks == 1
+
+
+@patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
+def test_missing_trusted_ownership_denies_write(_auth):
+    db = FakeSession()
+    with pytest.raises(AssessmentEvidenceInvalid, match="ownership"):
+        submit_assessment_review(db, **request(trusted_evidence_owners=None))
+    assert db.added == []
+    assert db.commits == 0
+
+
+@patch("crownpath.assessment_service.can_review_assigned_learner", return_value=True)
+def test_wrong_learner_ownership_denies_write(_auth):
+    db = FakeSession()
+    with pytest.raises(AssessmentEvidenceInvalid, match="ownership"):
+        submit_assessment_review(db, **request(trusted_evidence_owners={"CP-EV-1": "someone-else"}))
+    assert db.added == []
+    assert db.commits == 0
