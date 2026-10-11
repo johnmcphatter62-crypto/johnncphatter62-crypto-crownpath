@@ -46,6 +46,7 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
     def setUpClass(cls):
         init_db()
         cls.client = TestClient(app)
+        cls.client.headers.update({'Origin': 'http://testserver'})
 
     def setUp(self):
         suffix = uuid.uuid4().hex[:10]
