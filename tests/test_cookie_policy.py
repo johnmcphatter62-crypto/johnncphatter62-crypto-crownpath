@@ -11,16 +11,29 @@ class SessionCookiePolicyTest(unittest.TestCase):
         self.assertEqual(main.COOKIE_SECURE, main.REQUIRE_HTTPS or not main.DEMO_MODE)
 
     def test_login_cookie_attributes(self):
-        with patch.object(main, "authenticate", return_value=({"user_id": "test-user"}, "OK")):
-            with patch.object(main, "create_access_token", return_value="test-token"):
-                response = Response()
-                try:
-                    main.login(main.LoginRequest(email="test@example.invalid", password="test"), response)
-                except Exception as exc:
-                    self.skipTest(f"Login request shape requires integration fixture: {type(exc).__name__}")
-                cookie = response.headers.get("set-cookie", "")
-                self.assertIn("HttpOnly", cookie)
-                self.assertIn("SameSite=lax", cookie)
-                self.assertIn("Max-Age=1800", cookie)
-                if main.COOKIE_SECURE:
-                    self.assertIn("Secure", cookie)
+        user = {
+            "user_id": "ci-cookie-user",
+            "role": "OWNER",
+            "mfa_enabled": False,
+            "active": True,
+            "email": "test@example.invalid",
+        }
+        with patch.object(main, "authenticate", return_value=(user, "OK")):
+            with patch.object(main, "role_access_approved", return_value=True):
+                with patch.object(main, "create_access_token", return_value="ci-cookie-token"):
+                    with patch.object(main, "public_user", return_value={"user_id": "ci-cookie-user"}):
+                        response = Response()
+                        result = main.login(
+                            main.LoginRequest(email="test@example.invalid", password="ci-test-only"),
+                            response,
+                        )
+        self.assertTrue(result["authenticated"])
+        cookie = response.headers.get("set-cookie", "")
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=lax", cookie)
+        self.assertIn("Max-Age=1800", cookie)
+        self.assertIn("Path=/", cookie)
+        if main.COOKIE_SECURE:
+            self.assertIn("Secure", cookie)
+        else:
+            self.assertNotIn("Secure", cookie)
