@@ -204,6 +204,27 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
                     self.assertEqual(response.status_code, 403)
             revoke.assert_not_called()
 
+    def test_security_headers_are_present_on_successful_requests(self):
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app)
+        response = client.get("/api/health")
+        self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        self.assertEqual(response.headers.get("referrer-policy"), "no-referrer")
+        self.assertEqual(response.headers.get("cache-control"), "no-store")
+
+    def test_denied_cross_origin_request_is_not_cacheable(self):
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app)
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        response = client.post("/api/auth/logout", headers={"Origin": "https://attacker.example"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.headers.get("cache-control"), "no-store")
+
     def test_logout_revocation_is_called_only_once(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
