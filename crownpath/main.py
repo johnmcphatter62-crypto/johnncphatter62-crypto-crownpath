@@ -257,7 +257,11 @@ def mfa_enable(payload:MfaEnableRequest,user=Depends(current_user)):
 def logout(request:Request, response:Response):
     token = request.cookies.get("crownpath_session")
     if token:
-        revoke_access_token(token)
+        try:
+            revoke_access_token(token)
+        except Exception:
+            # A database failure must not be reported as successful revocation.
+            raise HTTPException(503, "Logout could not be confirmed. Please retry.")
     response.delete_cookie("crownpath_session", path="/")
     return {"authenticated":False}
 
