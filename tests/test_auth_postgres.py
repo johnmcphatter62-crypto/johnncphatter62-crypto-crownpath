@@ -98,6 +98,26 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_token_without_session_purpose_cannot_revoke_valid_session(self):
+        email = f"crownpath-revoke-{uuid.uuid4().hex[:10]}@example.invalid"
+        created = create_user("Revoke Purpose Test", email, "CrownPath-Revoke-Test-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            payload.pop("purpose")
+            malformed = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+            self.assertFalse(revoke_access_token(malformed))
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            self.assertTrue(revoke_access_token(token))
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_expired_session_token_is_rejected(self):
         now = datetime.now(timezone.utc)
         expired = jwt.encode(
