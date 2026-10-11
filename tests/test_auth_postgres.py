@@ -85,7 +85,7 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             self.assertEqual(decode_access_token(token), created["user_id"])
             client = TestClient(app)
             client.cookies.set("crownpath_session", token)
-            response = client.post("/api/auth/logout")
+            response = client.post("/api/auth/logout", headers={"Origin": "http://testserver"})
             self.assertEqual(response.status_code, 200)
             self.assertIsNone(decode_access_token(token))
             self.assertFalse(revoke_access_token(token))
@@ -133,6 +133,19 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             self.assertEqual(allowed.status_code, 200)
             revoke.assert_called_once()
 
+    def test_authenticated_mutation_requires_verifiable_origin(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app, base_url="http://testserver")
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch("crownpath.main.revoke_access_token", return_value=True) as revoke:
+            self.assertEqual(client.post("/api/auth/logout").status_code, 403)
+            self.assertEqual(client.post("/api/auth/logout", headers={"Referer": "https://other.example/"}).status_code, 403)
+            self.assertEqual(client.post("/api/auth/logout", headers={"Referer": "http://testserver/classroom"}).status_code, 200)
+            revoke.assert_called_once()
+
     def test_logout_revocation_is_called_only_once(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
@@ -141,7 +154,7 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
         client = TestClient(app)
         client.cookies.set("crownpath_session", "simulated-session-token")
         with patch("crownpath.main.revoke_access_token", return_value=True) as revoke:
-            response = client.post("/api/auth/logout")
+            response = client.post("/api/auth/logout", headers={"Origin": "http://testserver"})
         self.assertEqual(response.status_code, 200)
         revoke.assert_called_once_with("simulated-session-token")
 
@@ -153,7 +166,7 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
         client = TestClient(app)
         client.cookies.set("crownpath_session", "simulated-session-token")
         with patch("crownpath.main.revoke_access_token", side_effect=RuntimeError("database unavailable")):
-            response = client.post("/api/auth/logout")
+            response = client.post("/api/auth/logout", headers={"Origin": "http://testserver"})
         self.assertEqual(response.status_code, 503)
         self.assertNotEqual(response.json(), {"authenticated": False})
 
