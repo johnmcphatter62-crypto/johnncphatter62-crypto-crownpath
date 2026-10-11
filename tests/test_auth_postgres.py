@@ -118,6 +118,18 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_logout_revocation_is_called_only_once(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app)
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch("crownpath.main.revoke_access_token", return_value=True) as revoke:
+            response = client.post("/api/auth/logout")
+        self.assertEqual(response.status_code, 200)
+        revoke.assert_called_once_with("simulated-session-token")
+
     def test_logout_database_failure_is_not_reported_as_success(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
