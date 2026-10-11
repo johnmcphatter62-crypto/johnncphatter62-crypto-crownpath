@@ -118,6 +118,21 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_cross_origin_cookie_authenticated_logout_is_blocked(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app, base_url="http://testserver")
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch("crownpath.main.revoke_access_token", return_value=True) as revoke:
+            denied = client.post("/api/auth/logout", headers={"Origin": "https://attacker.example"})
+            self.assertEqual(denied.status_code, 403)
+            revoke.assert_not_called()
+            allowed = client.post("/api/auth/logout", headers={"Origin": "http://testserver"})
+            self.assertEqual(allowed.status_code, 200)
+            revoke.assert_called_once()
+
     def test_logout_revocation_is_called_only_once(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
