@@ -135,7 +135,7 @@ def decode_access_token(token: str):
 def revoke_access_token(token: str) -> bool:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("purpose") not in {None, "session"}:
+        if payload.get("purpose") != "session":
             return False
         user_id = payload.get("sub")
         session_id = payload.get("jti")
