@@ -118,6 +118,18 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_logout_database_failure_is_not_reported_as_success(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app)
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch("crownpath.main.revoke_access_token", side_effect=RuntimeError("database unavailable")):
+            response = client.post("/api/auth/logout")
+        self.assertEqual(response.status_code, 503)
+        self.assertNotEqual(response.json(), {"authenticated": False})
+
     def test_expired_session_token_is_rejected(self):
         now = datetime.now(timezone.utc)
         expired = jwt.encode(
