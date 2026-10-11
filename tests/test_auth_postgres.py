@@ -146,6 +146,27 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             self.assertEqual(client.post("/api/auth/logout", headers={"Referer": "http://testserver/classroom"}).status_code, 200)
             revoke.assert_called_once()
 
+    def test_forged_forwarded_headers_do_not_bypass_origin_checks(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app, base_url="http://testserver")
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch("crownpath.main.revoke_access_token", return_value=True) as revoke:
+            for headers in (
+                {"Origin": "https://attacker.example", "X-Forwarded-Host": "attacker.example"},
+                {"Origin": "https://attacker.example", "X-Forwarded-Proto": "https"},
+                {"Origin": "http://testserver:444", "X-Forwarded-Port": "444"},
+                {"Origin": "https://testserver", "X-Forwarded-Proto": "https"},
+                {"Origin": "null"},
+                {"Origin": "http://testserver.evil.example"},
+                {"Origin": "http://testserver@attacker.example"},
+            ):
+                with self.subTest(headers=headers):
+                    self.assertEqual(client.post("/api/auth/logout", headers=headers).status_code, 403)
+            revoke.assert_not_called()
+
     def test_logout_revocation_is_called_only_once(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
