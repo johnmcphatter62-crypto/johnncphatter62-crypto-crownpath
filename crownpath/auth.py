@@ -117,11 +117,15 @@ def _active_session(user_id: str, session_id: str) -> bool:
 def decode_access_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("purpose") not in {None, "session"}:
+        if payload.get("purpose") != "session":
             return None
         user_id = payload.get("sub")
         session_id = payload.get("jti")
-        if session_id and not _active_session(user_id, session_id):
+        if not isinstance(user_id, str) or not user_id:
+            return None
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        if not _active_session(user_id, session_id):
             return None
         return user_id
     except InvalidTokenError:
