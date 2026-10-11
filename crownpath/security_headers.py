@@ -5,9 +5,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        # For cookie-authenticated state changes, reject requests whose Origin
-        # does not match the request host. Requests without Origin are allowed
-        # for non-browser clients; browsers normally send Origin on fetch POSTs.
+        # Cookie-authenticated mutations require a verifiable same-origin
+        # Origin or Referer. Do not trust client-supplied forwarded headers.
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.cookies.get("crownpath_session"):
             from urllib.parse import urlsplit
             from starlette.responses import JSONResponse
@@ -23,6 +22,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             if source:
                 parsed = urlsplit(source)
                 expected = request.url
+                # Forwarded host/proto headers are deliberately not used here.
+                # A trusted ASGI proxy configuration must normalize request.url.
                 if (
                     parsed.scheme not in {"http", "https"}
                     or parsed.username is not None
