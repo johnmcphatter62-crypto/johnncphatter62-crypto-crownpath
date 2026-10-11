@@ -5,16 +5,22 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        # For cookie-authenticated state changes, reject requests whose Origin
-        # does not match the request host. Requests without Origin are allowed
-        # for non-browser clients; browsers normally send Origin on fetch POSTs.
+        # For cookie-authenticated state changes, require a matching Origin
+        # or, if Origin is absent, a matching Referer. Fail closed otherwise.
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.cookies.get("crownpath_session"):
             from urllib.parse import urlsplit
             from starlette.responses import JSONResponse
 
             origin = request.headers.get("origin")
-            if origin:
-                parsed = urlsplit(origin)
+            source = origin if origin is not None else request.headers.get("referer")
+            if source is None:
+                return JSONResponse(
+                    {"detail": "Request origin could not be verified."},
+                    status_code=403,
+                    headers={"Cache-Control": "no-store"},
+                )
+            if source:
+                parsed = urlsplit(source)
                 expected = request.url
                 if (
                     parsed.scheme not in {"http", "https"}
@@ -24,9 +30,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                     or (parsed.port or (443 if parsed.scheme == "https" else 80))
                     != (expected.port or (443 if expected.scheme == "https" else 80))
                     or parsed.scheme != expected.scheme
-                    or parsed.path not in {"", "/"}
-                    or parsed.query
-                    or parsed.fragment
+                    or (origin is not None and parsed.path not in {"", "/"})
+                    or (origin is not None and (parsed.query or parsed.fragment))
                 ):
                     return JSONResponse(
                         {"detail": "Cross-origin state-changing request denied."},
