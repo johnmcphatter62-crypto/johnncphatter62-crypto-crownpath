@@ -225,6 +225,22 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.headers.get("cache-control"), "no-store")
 
+    def test_hsts_follows_explicit_https_requirement(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app)
+        with patch.dict(os.environ, {"CROWNPATH_REQUIRE_HTTPS": "false"}):
+            response = client.get("/api/health")
+            self.assertNotIn("strict-transport-security", response.headers)
+        with patch.dict(os.environ, {"CROWNPATH_REQUIRE_HTTPS": "true"}):
+            response = client.get("/api/health")
+            self.assertEqual(
+                response.headers.get("strict-transport-security"),
+                "max-age=31536000; includeSubDomains",
+            )
+
     def test_logout_revocation_is_called_only_once(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
