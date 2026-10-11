@@ -32,3 +32,13 @@
 ## Decision
 
 **Release gate: BLOCKED.** A passing CI run does not demonstrate production readiness. This record is not a launch authorization.
+
+## Automated evidence snapshot — CI run #382
+
+- Commit: `fd70aca494399997c6ec68fe7174bd6d6df7146f`
+- Workflow: [CrownPath CI #382](https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/38184950490)
+- Application job: **PASS**
+- Owner-access job: **PASS**
+- Migration job: **PASS**
+- Evidence type: GitHub Actions job conclusions. This is **not** a production browser or reverse-proxy test.
+- Remaining gate: **BLOCKED** pending authorized nonproduction HTTPS and proxy validation, browser security checks, and explicit owner release approval.
