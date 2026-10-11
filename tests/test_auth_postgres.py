@@ -130,6 +130,60 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertNotEqual(response.json(), {"authenticated": False})
 
+    def test_database_expired_session_is_rejected(self):
+        email = f"crownpath-db-expired-{uuid.uuid4().hex[:10]}@example.invalid"
+        created = create_user("Expired Session Test", email, "CrownPath-Expired-Test-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            db = session()
+            try:
+                from sqlalchemy import update
+                db.execute(
+                    update(AuthToken)
+                    .where(AuthToken.user_id == created["user_id"], AuthToken.token_type == "SESSION")
+                    .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=5))
+                )
+                db.commit()
+            finally:
+                db.close()
+            self.assertIsNone(decode_access_token(token))
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
+    def test_deactivated_account_cannot_access_authenticated_endpoint(self):
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        email = f"crownpath-inactive-{uuid.uuid4().hex[:10]}@example.invalid"
+        created = create_user("Inactive Account Test", email, "CrownPath-Inactive-Test-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            db = session()
+            try:
+                from sqlalchemy import update
+                db.execute(update(User).where(User.user_id == created["user_id"]).values(active=False))
+                db.commit()
+            finally:
+                db.close()
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 401)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_expired_session_token_is_rejected(self):
         now = datetime.now(timezone.utc)
         expired = jwt.encode(
