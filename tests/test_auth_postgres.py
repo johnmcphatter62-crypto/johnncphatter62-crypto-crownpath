@@ -60,6 +60,44 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
 
         self.assertIsNone(get_user_by_email(email))
 
+    def test_session_without_required_claims_is_rejected(self):
+        now = datetime.now(timezone.utc)
+        for claims in (
+            {"sub": "CP-USR-MISSING-JTI", "purpose": "session"},
+            {"sub": "CP-USR-MISSING-PURPOSE", "jti": uuid.uuid4().hex},
+            {"sub": "CP-USR-EMPTY-JTI", "purpose": "session", "jti": ""},
+        ):
+            token = jwt.encode(
+                {**claims, "iat": now, "exp": now + timedelta(minutes=5)},
+                SECRET_KEY,
+                algorithm=ALGORITHM,
+            )
+            self.assertIsNone(decode_access_token(token))
+
+    def test_logout_revokes_session_and_rejects_replay(self):
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        email = f"crownpath-logout-{uuid.uuid4().hex[:10]}@example.invalid"
+        created = create_user("Logout Test", email, "CrownPath-Logout-Test-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", token)
+            response = client.post("/api/auth/logout")
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNone(decode_access_token(token))
+            self.assertFalse(revoke_access_token(token))
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_expired_session_token_is_rejected(self):
         now = datetime.now(timezone.utc)
         expired = jwt.encode(
