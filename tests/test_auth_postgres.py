@@ -167,6 +167,43 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
                     self.assertEqual(client.post("/api/auth/logout", headers=headers).status_code, 403)
             revoke.assert_not_called()
 
+    def test_origin_takes_precedence_over_referer(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app, base_url="http://testserver")
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch("crownpath.main.revoke_access_token", return_value=True) as revoke:
+            rejected = client.post(
+                "/api/auth/logout",
+                headers={"Origin": "https://attacker.example", "Referer": "http://testserver/classroom"},
+            )
+            self.assertEqual(rejected.status_code, 403)
+            accepted = client.post(
+                "/api/auth/logout",
+                headers={"Origin": "http://testserver", "Referer": "https://attacker.example/"},
+            )
+            self.assertEqual(accepted.status_code, 200)
+            revoke.assert_called_once()
+
+    def test_malformed_origin_is_not_rescued_by_referer(self):
+        from unittest.mock import patch
+        from fastapi.testclient import TestClient
+        from crownpath.main import app
+
+        client = TestClient(app, base_url="http://testserver")
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch("crownpath.main.revoke_access_token", return_value=True) as revoke:
+            for origin in ("", "null", "http://testserver/path", "http://testserver?query=1"):
+                with self.subTest(origin=origin):
+                    response = client.post(
+                        "/api/auth/logout",
+                        headers={"Origin": origin, "Referer": "http://testserver/classroom"},
+                    )
+                    self.assertEqual(response.status_code, 403)
+            revoke.assert_not_called()
+
     def test_logout_revocation_is_called_only_once(self):
         from unittest.mock import patch
         from fastapi.testclient import TestClient
