@@ -757,6 +757,36 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_role_change_then_reversal_never_restores_original_session(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_role
+        from crownpath.main import app
+
+        email = f"crownpath-role-reverse-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Role Reversal Test", email, "CrownPath-Role-Reverse-2026!", "HOME_CARE")
+        original_token = create_access_token(created["user_id"])
+        try:
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", original_token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+            set_user_role(created["user_id"], "INSTRUCTOR", True)
+            self.assertIsNone(decode_access_token(original_token))
+            self.assertEqual(client.get("/api/auth/me").status_code, 401)
+            set_user_role(created["user_id"], "HOME_CARE", True)
+            self.assertIsNone(decode_access_token(original_token))
+            self.assertEqual(client.get("/api/auth/me").status_code, 401)
+            new_token = create_access_token(created["user_id"])
+            client.cookies.set("crownpath_session", new_token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
