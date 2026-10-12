@@ -654,6 +654,351 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
             self.assertEqual(lesson["progress"], 100)
             self.assertEqual(lesson["completed_steps"], expected_steps)
 
+    def test_out_of_range_step_does_not_create_progress_records(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        response = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/999/complete")
+        self.assertEqual(response.status_code, 404, response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
+    def test_invalid_step_after_partial_progress_preserves_existing_completion(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        invalid = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/999/complete")
+        self.assertEqual(invalid.status_code, 404, invalid.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                1,
+            )
+        finally:
+            db.close()
+
+    def test_invalid_step_after_full_completion_preserves_completed_lesson(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        completed = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+        self.assertEqual(completed.status_code, 200, completed.text)
+        expected_steps = completed.json()["lesson"]["completed_steps"]
+
+        invalid = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/999/complete")
+        self.assertEqual(invalid.status_code, 404, invalid.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        lesson = reopened.json()["lesson"]
+        self.assertEqual(lesson["status"], "COMPLETED")
+        self.assertEqual(lesson["progress"], 100)
+        self.assertEqual(lesson["completed_steps"], expected_steps)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                len(expected_steps),
+            )
+        finally:
+            db.close()
+
+    def test_unknown_lesson_requests_cannot_create_progress_records(self):
+        lesson_id = "not-a-real-lesson"
+        for path in (
+            f"/api/learner/lessons/{lesson_id}/open",
+            f"/api/learner/lessons/{lesson_id}/steps/1/complete",
+            f"/api/learner/lessons/{lesson_id}/complete",
+        ):
+            with self.subTest(path=path):
+                response = self.client.post(path)
+                self.assertEqual(response.status_code, 404, response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
+    def test_unknown_lesson_request_does_not_change_existing_progress(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        completed = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(completed.status_code, 200, completed.text)
+        expected_progress = completed.json()["lesson"]["progress"]
+
+        for path in (
+            "/api/learner/lessons/not-a-real-lesson/open",
+            "/api/learner/lessons/not-a-real-lesson/steps/1/complete",
+            "/api/learner/lessons/not-a-real-lesson/complete",
+        ):
+            with self.subTest(path=path):
+                invalid = self.client.post(path)
+                self.assertEqual(invalid.status_code, 404, invalid.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+    def test_cross_track_requests_preserve_existing_home_care_progress(self):
+        home_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{home_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        for path in (
+            "/api/learner/lessons/barber-foundations/open",
+            "/api/learner/lessons/barber-foundations/steps/1/complete",
+            "/api/learner/lessons/barber-foundations/complete",
+        ):
+            with self.subTest(path=path):
+                rejected = self.client.post(path)
+                self.assertEqual(rejected.status_code, 404, rejected.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{home_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+    def test_cross_track_requests_do_not_create_barber_records_after_home_progress(self):
+        home_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{home_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+
+        barber_id = "barber-foundations"
+        for path in (
+            f"/api/learner/lessons/{barber_id}/open",
+            f"/api/learner/lessons/{barber_id}/steps/1/complete",
+            f"/api/learner/lessons/{barber_id}/complete",
+        ):
+            with self.subTest(path=path):
+                rejected = self.client.post(path)
+                self.assertEqual(rejected.status_code, 404, rejected.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=barber_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=barber_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=home_id
+                ).count(),
+                1,
+            )
+        finally:
+            db.close()
+
+    def test_unauthorized_cosmetology_requests_preserve_barber_progress(self):
+        self.login_as_role("BARBER")
+        barber_id = "barber-foundations"
+        first = self.client.post(f"/api/learner/lessons/{barber_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        cosmetology_id = "cosmetology-foundations"
+        for path in (
+            f"/api/learner/lessons/{cosmetology_id}/open",
+            f"/api/learner/lessons/{cosmetology_id}/steps/1/complete",
+            f"/api/learner/lessons/{cosmetology_id}/complete",
+        ):
+            with self.subTest(path=path):
+                rejected = self.client.post(path)
+                self.assertEqual(rejected.status_code, 404, rejected.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{barber_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=cosmetology_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=cosmetology_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
+    def test_unauthorized_barber_requests_preserve_cosmetology_progress(self):
+        self.login_as_role("COSMETOLOGY_PRO")
+        cosmetology_id = "cosmetology-foundations"
+        first = self.client.post(f"/api/learner/lessons/{cosmetology_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        barber_id = "barber-foundations"
+        for path in (
+            f"/api/learner/lessons/{barber_id}/open",
+            f"/api/learner/lessons/{barber_id}/steps/1/complete",
+            f"/api/learner/lessons/{barber_id}/complete",
+        ):
+            with self.subTest(path=path):
+                rejected = self.client.post(path)
+                self.assertEqual(rejected.status_code, 404, rejected.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{cosmetology_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=barber_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=barber_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
+    def test_instructor_cannot_complete_learner_steps_or_create_progress(self):
+        self.login_as_role("INSTRUCTOR")
+        lesson_id = "home-care-foundations"
+        response = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(response.status_code, 403, response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
+    def test_instructor_role_cannot_modify_existing_learner_progress(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        self.login_as_role("INSTRUCTOR")
+        for path in (
+            f"/api/learner/lessons/{lesson_id}/open",
+            f"/api/learner/lessons/{lesson_id}/steps/2/complete",
+            f"/api/learner/lessons/{lesson_id}/complete",
+        ):
+            with self.subTest(path=path):
+                denied = self.client.post(path)
+                self.assertEqual(denied.status_code, 403, denied.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                1,
+            )
+        finally:
+            db.close()
+
+        self.login_as_role("HOME_CARE")
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+    def test_repeated_full_lesson_completion_is_idempotent(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_steps = first.json()["lesson"]["total_steps"]
+
+        for _ in range(3):
+            response = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+            self.assertEqual(response.status_code, 200, response.text)
+            lesson = response.json()["lesson"]
+            self.assertEqual(lesson["status"], "COMPLETED")
+            self.assertEqual(lesson["progress"], 100)
+            self.assertEqual(len(lesson["completed_steps"]), expected_steps)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                1,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                expected_steps,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
