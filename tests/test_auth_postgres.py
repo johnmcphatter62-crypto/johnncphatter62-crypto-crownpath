@@ -576,6 +576,46 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_rejected_owner_account_changes_preserve_existing_session(self):
+        from fastapi.testclient import TestClient
+        from sqlalchemy import update
+        from crownpath.auth import set_user_active, set_user_role
+        from crownpath.main import app
+
+        email = f"crownpath-owner-session-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Synthetic Owner Session", email, "CrownPath-Owner-Session-2026!", "HOME_CARE")
+        try:
+            db = session()
+            try:
+                db.execute(update(User).where(User.user_id == created["user_id"]).values(role="OWNER", track="OWNER"))
+                db.commit()
+            finally:
+                db.close()
+            token = create_access_token(created["user_id"])
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", token)
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            with self.assertRaises(ValueError):
+                set_user_active(created["user_id"], False)
+            with self.assertRaises(ValueError):
+                set_user_role(created["user_id"], "INSTRUCTOR", False)
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            db = session()
+            try:
+                owner = db.get(User, created["user_id"])
+                self.assertTrue(owner.active)
+                self.assertEqual(owner.role, "OWNER")
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
