@@ -645,6 +645,33 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_unsupported_role_update_preserves_account_and_session(self):
+        from crownpath.auth import set_user_role
+
+        email = f"crownpath-invalid-role-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Invalid Role Test", email, "CrownPath-Invalid-Role-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            with self.assertRaisesRegex(ValueError, "Unsupported staff or learner role"):
+                set_user_role(created["user_id"], "SYSTEM_ADMIN", False)
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            db = session()
+            try:
+                user = db.get(User, created["user_id"])
+                self.assertEqual(user.role, "HOME_CARE")
+                self.assertEqual(user.track, "HOME_CARE")
+                self.assertTrue(user.active)
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
