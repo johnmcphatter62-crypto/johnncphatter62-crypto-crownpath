@@ -616,6 +616,35 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_self_registration_and_role_update_cannot_grant_owner_role(self):
+        from crownpath.auth import set_user_role
+
+        email = f"crownpath-owner-denied-{uuid.uuid4().hex[:10]}@example.com"
+        with self.assertRaisesRegex(ValueError, "cannot be self-assigned"):
+            create_user("Owner Self Registration", email, "CrownPath-Owner-Denied-2026!", "OWNER")
+
+        created = create_user("Role Elevation Guard", email, "CrownPath-Role-Denied-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            with self.assertRaisesRegex(ValueError, "Unsupported staff or learner role"):
+                set_user_role(created["user_id"], "OWNER", True)
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            db = session()
+            try:
+                user = db.get(User, created["user_id"])
+                self.assertEqual(user.role, "HOME_CARE")
+                self.assertTrue(user.active)
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
