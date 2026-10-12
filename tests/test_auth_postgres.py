@@ -461,6 +461,30 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_unchanged_role_update_preserves_valid_session(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_role
+        from crownpath.main import app
+
+        email = f"crownpath-same-role-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Same Role Test", email, "CrownPath-Same-Role-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+            set_user_role(created["user_id"], "HOME_CARE", True)
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
