@@ -674,6 +674,29 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_instructor_cannot_complete_learner_steps_or_create_progress(self):
+        self.login_as_role("INSTRUCTOR")
+        lesson_id = "home-care-foundations"
+        response = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(response.status_code, 403, response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_open_or_complete_learner_lessons(self):
         self.login_as_role("INSTRUCTOR")
         for path in (
