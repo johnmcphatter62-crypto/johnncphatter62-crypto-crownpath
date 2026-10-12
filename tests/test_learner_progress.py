@@ -364,6 +364,44 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
         self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
 
+    def test_cross_track_requests_do_not_create_barber_records_after_home_progress(self):
+        home_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{home_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+
+        barber_id = "barber-foundations"
+        for path in (
+            f"/api/learner/lessons/{barber_id}/open",
+            f"/api/learner/lessons/{barber_id}/steps/1/complete",
+            f"/api/learner/lessons/{barber_id}/complete",
+        ):
+            with self.subTest(path=path):
+                rejected = self.client.post(path)
+                self.assertEqual(rejected.status_code, 404, rejected.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=barber_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=barber_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=home_id
+                ).count(),
+                1,
+            )
+        finally:
+            db.close()
+
     def test_wrong_path_lesson_is_rejected(self):
         response = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(response.status_code, 404)
