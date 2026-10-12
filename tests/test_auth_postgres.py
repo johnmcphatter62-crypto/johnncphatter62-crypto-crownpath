@@ -847,6 +847,35 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_role_management_reactivation_does_not_restore_revoked_session(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_role, set_user_active
+        from crownpath.main import app
+
+        email = f"crownpath-role-reactivate-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Role Reactivation Test", email, "CrownPath-Role-Reactivate-2026!", "HOME_CARE")
+        old_token = create_access_token(created["user_id"])
+        try:
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", old_token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+            set_user_active(created["user_id"], False)
+            self.assertIsNone(decode_access_token(old_token))
+            set_user_role(created["user_id"], "HOME_CARE", True)
+            self.assertIsNone(decode_access_token(old_token))
+            self.assertEqual(client.get("/api/auth/me").status_code, 401)
+            new_token = create_access_token(created["user_id"])
+            client.cookies.set("crownpath_session", new_token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
