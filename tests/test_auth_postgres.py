@@ -485,6 +485,36 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_role_change_revokes_multiple_browser_sessions(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_role
+        from crownpath.main import app
+
+        email = f"crownpath-role-multi-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Role Multi Session Test", email, "CrownPath-Role-Multi-2026!", "HOME_CARE")
+        first_token = create_access_token(created["user_id"])
+        second_token = create_access_token(created["user_id"])
+        try:
+            first_client = TestClient(app)
+            second_client = TestClient(app)
+            first_client.cookies.set("crownpath_session", first_token)
+            second_client.cookies.set("crownpath_session", second_token)
+            self.assertEqual(first_client.get("/api/auth/me").status_code, 200)
+            self.assertEqual(second_client.get("/api/auth/me").status_code, 200)
+            set_user_role(created["user_id"], "INSTRUCTOR", True)
+            self.assertIsNone(decode_access_token(first_token))
+            self.assertIsNone(decode_access_token(second_token))
+            self.assertEqual(first_client.get("/api/auth/me").status_code, 401)
+            self.assertEqual(second_client.get("/api/auth/me").status_code, 401)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
