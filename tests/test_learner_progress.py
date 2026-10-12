@@ -331,6 +331,39 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_completing_one_lesson_does_not_modify_another(self):
+        modules = self.client.get("/api/learner/dashboard").json()["modules"]
+        first_id = modules[0]["lesson_id"]
+        second_id = modules[1]["lesson_id"]
+        self.assertNotEqual(first_id, second_id)
+
+        first = self.client.post(f"/api/learner/lessons/{first_id}/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(first.json()["lesson"]["progress"], 100)
+
+        dashboard = self.client.get("/api/learner/dashboard")
+        self.assertEqual(dashboard.status_code, 200, dashboard.text)
+        by_id = {item["lesson_id"]: item for item in dashboard.json()["modules"]}
+        self.assertEqual(by_id[first_id]["progress"], 100)
+        self.assertEqual(by_id[second_id]["progress"], 0)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=second_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=second_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
