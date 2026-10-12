@@ -324,6 +324,26 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_unknown_lesson_request_does_not_change_existing_progress(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        completed = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(completed.status_code, 200, completed.text)
+        expected_progress = completed.json()["lesson"]["progress"]
+
+        for path in (
+            "/api/learner/lessons/not-a-real-lesson/open",
+            "/api/learner/lessons/not-a-real-lesson/steps/1/complete",
+            "/api/learner/lessons/not-a-real-lesson/complete",
+        ):
+            with self.subTest(path=path):
+                invalid = self.client.post(path)
+                self.assertEqual(invalid.status_code, 404, invalid.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
     def test_wrong_path_lesson_is_rejected(self):
         response = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(response.status_code, 404)
