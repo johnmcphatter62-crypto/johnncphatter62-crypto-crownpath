@@ -344,6 +344,26 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
         self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
 
+    def test_cross_track_requests_preserve_existing_home_care_progress(self):
+        home_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{home_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        for path in (
+            "/api/learner/lessons/barber-foundations/open",
+            "/api/learner/lessons/barber-foundations/steps/1/complete",
+            "/api/learner/lessons/barber-foundations/complete",
+        ):
+            with self.subTest(path=path):
+                rejected = self.client.post(path)
+                self.assertEqual(rejected.status_code, 404, rejected.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{home_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
     def test_wrong_path_lesson_is_rejected(self):
         response = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(response.status_code, 404)
