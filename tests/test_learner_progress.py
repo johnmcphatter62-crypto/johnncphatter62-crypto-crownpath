@@ -228,10 +228,21 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
 
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
-        dashboard = self.client.get("/api/learner/dashboard")
-        self.assertEqual(dashboard.status_code, 403)
-        step = self.client.post("/api/learner/lessons/home-care-foundations/steps/1/complete")
-        self.assertEqual(step.status_code, 403)
+        # Role changes revoke existing sessions, even if the account remains active.
+        self.assertEqual(self.client.get("/api/learner/dashboard").status_code, 401)
+        self.assertEqual(
+            self.client.post("/api/learner/lessons/home-care-foundations/steps/1/complete").status_code,
+            401,
+        )
+        # After signing in again, instructor permissions still forbid learner endpoints.
+        self.client.cookies.clear()
+        response = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.client.get("/api/learner/dashboard").status_code, 403)
+        self.assertEqual(
+            self.client.post("/api/learner/lessons/home-care-foundations/steps/1/complete").status_code,
+            403,
+        )
 
 
 if __name__ == "__main__":
