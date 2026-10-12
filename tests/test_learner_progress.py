@@ -640,6 +640,20 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
             all(module["progress"] == 100 for module in final.json()["modules"])
         )
 
+    def test_reopening_completed_lesson_preserves_full_completion(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        completed = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+        self.assertEqual(completed.status_code, 200, completed.text)
+        expected_steps = completed.json()["lesson"]["completed_steps"]
+
+        for _ in range(3):
+            reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+            self.assertEqual(reopened.status_code, 200, reopened.text)
+            lesson = reopened.json()["lesson"]
+            self.assertEqual(lesson["status"], "COMPLETED")
+            self.assertEqual(lesson["progress"], 100)
+            self.assertEqual(lesson["completed_steps"], expected_steps)
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
