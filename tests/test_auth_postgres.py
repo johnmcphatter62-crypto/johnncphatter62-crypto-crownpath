@@ -701,6 +701,32 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_redundant_activation_preserves_valid_sessions(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_active
+        from crownpath.main import app
+
+        email = f"crownpath-still-active-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Already Active Test", email, "CrownPath-Still-Active-2026!", "HOME_CARE")
+        tokens = [create_access_token(created["user_id"]) for _ in range(2)]
+        try:
+            clients = [TestClient(app), TestClient(app)]
+            for client, token in zip(clients, tokens):
+                client.cookies.set("crownpath_session", token)
+                self.assertEqual(client.get("/api/auth/me").status_code, 200)
+            set_user_active(created["user_id"], True)
+            for client, token in zip(clients, tokens):
+                self.assertEqual(decode_access_token(token), created["user_id"])
+                self.assertEqual(client.get("/api/auth/me").status_code, 200)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
