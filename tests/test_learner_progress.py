@@ -402,6 +402,45 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_unauthorized_cosmetology_requests_preserve_barber_progress(self):
+        self.login_as_role("BARBER")
+        barber_id = "barber-foundations"
+        first = self.client.post(f"/api/learner/lessons/{barber_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        cosmetology_id = "cosmetology-foundations"
+        for path in (
+            f"/api/learner/lessons/{cosmetology_id}/open",
+            f"/api/learner/lessons/{cosmetology_id}/steps/1/complete",
+            f"/api/learner/lessons/{cosmetology_id}/complete",
+        ):
+            with self.subTest(path=path):
+                rejected = self.client.post(path)
+                self.assertEqual(rejected.status_code, 404, rejected.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{barber_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=cosmetology_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=cosmetology_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
     def test_wrong_path_lesson_is_rejected(self):
         response = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(response.status_code, 404)
