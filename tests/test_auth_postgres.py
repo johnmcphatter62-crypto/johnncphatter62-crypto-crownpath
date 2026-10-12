@@ -515,6 +515,33 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_deactivation_api_revokes_multiple_browser_sessions(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_active
+        from crownpath.main import app
+
+        email = f"crownpath-disable-multi-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Disable Multi Session Test", email, "CrownPath-Disable-Multi-2026!", "HOME_CARE")
+        first_token = create_access_token(created["user_id"])
+        second_token = create_access_token(created["user_id"])
+        try:
+            clients = [TestClient(app), TestClient(app)]
+            for client, token in zip(clients, [first_token, second_token]):
+                client.cookies.set("crownpath_session", token)
+                self.assertEqual(client.get("/api/auth/me").status_code, 200)
+            set_user_active(created["user_id"], False)
+            for client, token in zip(clients, [first_token, second_token]):
+                self.assertIsNone(decode_access_token(token))
+                self.assertEqual(client.get("/api/auth/me").status_code, 401)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
