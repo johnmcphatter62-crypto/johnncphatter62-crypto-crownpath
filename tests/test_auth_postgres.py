@@ -292,6 +292,38 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_database_expired_session_cannot_access_authenticated_endpoint(self):
+        from fastapi.testclient import TestClient
+        from sqlalchemy import update
+        from crownpath.main import app
+
+        email = f"crownpath-expired-http-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Expired HTTP Session", email, "CrownPath-Expired-HTTP-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            db = session()
+            try:
+                db.execute(
+                    update(AuthToken)
+                    .where(AuthToken.user_id == created["user_id"], AuthToken.token_type == "SESSION")
+                    .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=5))
+                )
+                db.commit()
+            finally:
+                db.close()
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", token)
+            response = client.get("/api/auth/me")
+            self.assertEqual(response.status_code, 401)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
