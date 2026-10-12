@@ -364,6 +364,58 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_two_learners_have_independent_lesson_progress(self):
+        second_email = f"learner-isolation-{uuid.uuid4().hex[:10]}@example.com"
+        second_password = "CrownPath-Isolation-2026!"
+        second = create_user("Second Learner", second_email, second_password, "HOME_CARE")
+        try:
+            second_client = TestClient(app)
+            second_client.headers.update({"Origin": "http://testserver"})
+            login = second_client.post(
+                "/api/auth/login",
+                json={"email": second_email, "password": second_password},
+            )
+            self.assertEqual(login.status_code, 200, login.text)
+
+            lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+            completed = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+            self.assertEqual(completed.status_code, 200, completed.text)
+
+            second_dashboard = second_client.get("/api/learner/dashboard")
+            self.assertEqual(second_dashboard.status_code, 200, second_dashboard.text)
+            second_lesson = next(
+                item for item in second_dashboard.json()["modules"]
+                if item["lesson_id"] == lesson_id
+            )
+            self.assertEqual(second_lesson["progress"], 0)
+
+            db = session()
+            try:
+                self.assertEqual(
+                    db.query(LearnerProgress).filter_by(
+                        user_id=second["user_id"], lesson_id=lesson_id
+                    ).count(),
+                    0,
+                )
+                self.assertEqual(
+                    db.query(LearnerLessonStep).filter_by(
+                        user_id=second["user_id"], lesson_id=lesson_id
+                    ).count(),
+                    0,
+                )
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(LearnerLessonStep).where(LearnerLessonStep.user_id == second["user_id"]))
+                db.execute(delete(LearnerProgress).where(LearnerProgress.user_id == second["user_id"]))
+                db.execute(delete(AuthToken).where(AuthToken.user_id == second["user_id"]))
+                db.execute(delete(User).where(User.user_id == second["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
