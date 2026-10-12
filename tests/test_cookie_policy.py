@@ -16,7 +16,7 @@ class SessionCookiePolicyTest(unittest.TestCase):
             "role": "OWNER",
             "mfa_enabled": False,
             "active": True,
-            "email": "test@example.invalid",
+            "email": "test@example.com",
         }
         with patch.object(main, "authenticate", return_value=(user, "OK")):
             with patch.object(main, "role_access_approved", return_value=True):
@@ -24,7 +24,7 @@ class SessionCookiePolicyTest(unittest.TestCase):
                     with patch.object(main, "public_user", return_value={"user_id": "ci-cookie-user"}):
                         response = Response()
                         result = main.login(
-                            main.LoginRequest(email="test@example.invalid", password="ci-test-only"),
+                            main.LoginRequest(email="test@example.com", password="ci-test-only"),
                             response,
                         )
         self.assertTrue(result["authenticated"])
