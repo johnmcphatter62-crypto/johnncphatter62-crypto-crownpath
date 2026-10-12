@@ -672,6 +672,35 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_unknown_user_role_update_does_not_affect_existing_account(self):
+        from crownpath.auth import set_user_role, set_user_active
+
+        email = f"crownpath-missing-user-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Unaffected User Test", email, "CrownPath-Missing-User-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        missing_id = f"CP-USR-MISSING-{uuid.uuid4().hex[:12].upper()}"
+        try:
+            with self.assertRaisesRegex(ValueError, "User not found"):
+                set_user_role(missing_id, "INSTRUCTOR", False)
+            with self.assertRaisesRegex(ValueError, "User not found"):
+                set_user_active(missing_id, False)
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            db = session()
+            try:
+                user = db.get(User, created["user_id"])
+                self.assertEqual(user.role, "HOME_CARE")
+                self.assertTrue(user.active)
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
