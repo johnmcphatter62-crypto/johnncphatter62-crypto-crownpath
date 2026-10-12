@@ -522,6 +522,33 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertEqual(lesson["completed_steps"], [1])
         self.assertEqual(lesson["progress"], original_progress)
 
+    def test_role_change_blocks_previous_track_lesson_completion(self):
+        self.login_as_role("BARBER")
+        lesson_id = "barber-foundations"
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+
+        self.login_as_role("COSMETOLOGY_PRO")
+        for path in (
+            f"/api/learner/lessons/{lesson_id}/open",
+            f"/api/learner/lessons/{lesson_id}/steps/2/complete",
+            f"/api/learner/lessons/{lesson_id}/complete",
+        ):
+            with self.subTest(path=path):
+                response = self.client.post(path)
+                self.assertEqual(response.status_code, 404, response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                1,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
