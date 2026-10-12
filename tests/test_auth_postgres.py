@@ -406,6 +406,35 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_reactivation_does_not_restore_old_browser_session(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_active
+        from crownpath.main import app
+
+        email = f"crownpath-reactivate-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Reactivation Session Test", email, "CrownPath-Reactivate-2026!", "HOME_CARE")
+        old_token = create_access_token(created["user_id"])
+        try:
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", old_token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+            set_user_active(created["user_id"], False)
+            self.assertEqual(client.get("/api/auth/me").status_code, 401)
+            set_user_active(created["user_id"], True)
+            self.assertIsNone(decode_access_token(old_token))
+            self.assertEqual(client.get("/api/auth/me").status_code, 401)
+            new_token = create_access_token(created["user_id"])
+            client.cookies.set("crownpath_session", new_token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
