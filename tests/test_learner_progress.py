@@ -443,6 +443,38 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_deactivated_learner_cannot_view_or_update_classroom_progress(self):
+        from crownpath.auth import set_user_active
+
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        set_user_active(self.user["user_id"], False)
+        for method, path in (
+            ("get", "/api/learner/dashboard"),
+            ("post", f"/api/learner/lessons/{lesson_id}/open"),
+            ("post", f"/api/learner/lessons/{lesson_id}/steps/1/complete"),
+            ("post", f"/api/learner/lessons/{lesson_id}/complete"),
+        ):
+            with self.subTest(path=path):
+                response = getattr(self.client, method)(path)
+                self.assertEqual(response.status_code, 401, response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
