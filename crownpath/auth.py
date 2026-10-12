@@ -351,6 +351,8 @@ def set_user_role(user_id: str, role: str, active: bool | None = None):
         user.track = role
         if active is not None:
             user.active = bool(active)
+        if active is False:
+            db.execute(update(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "SESSION", AuthToken.used_at.is_(None)).values(used_at=now_utc()))
         db.commit()
         db.refresh(user)
         return _user_dict(user)
@@ -367,6 +369,8 @@ def set_user_active(user_id: str, active: bool):
         if user.role == "OWNER" and not active:
             raise ValueError("Owner account cannot be disabled here.")
         user.active = bool(active)
+        if not active:
+            db.execute(update(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "SESSION", AuthToken.used_at.is_(None)).values(used_at=now_utc()))
         db.commit()
         db.refresh(user)
         return _user_dict(user)
