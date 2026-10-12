@@ -926,6 +926,39 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_invalid_role_with_deactivation_request_is_atomic(self):
+        from fastapi.testclient import TestClient
+        from crownpath.auth import set_user_role
+        from crownpath.main import app
+
+        email = f"crownpath-invalid-atomic-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Invalid Atomic Role Test", email, "CrownPath-Invalid-Atomic-2026!", "HOME_CARE")
+        token = create_access_token(created["user_id"])
+        try:
+            client = TestClient(app)
+            client.cookies.set("crownpath_session", token)
+            self.assertEqual(client.get("/api/auth/me").status_code, 200)
+            with self.assertRaises(ValueError):
+                set_user_role(created["user_id"], "not_a_role", False)
+            self.assertEqual(decode_access_token(token), created["user_id"])
+            response = client.get("/api/auth/me")
+            self.assertEqual(response.status_code, 200)
+            db = session()
+            try:
+                user = db.get(User, created["user_id"])
+                self.assertEqual(user.role, "HOME_CARE")
+                self.assertTrue(user.active)
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
