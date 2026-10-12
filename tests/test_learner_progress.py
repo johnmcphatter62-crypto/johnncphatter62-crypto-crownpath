@@ -697,6 +697,39 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_instructor_role_cannot_modify_existing_learner_progress(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        self.login_as_role("INSTRUCTOR")
+        for path in (
+            f"/api/learner/lessons/{lesson_id}/open",
+            f"/api/learner/lessons/{lesson_id}/steps/2/complete",
+            f"/api/learner/lessons/{lesson_id}/complete",
+        ):
+            with self.subTest(path=path):
+                denied = self.client.post(path)
+                self.assertEqual(denied.status_code, 403, denied.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                1,
+            )
+        finally:
+            db.close()
+
+        self.login_as_role("HOME_CARE")
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
     def test_instructor_cannot_open_or_complete_learner_lessons(self):
         self.login_as_role("INSTRUCTOR")
         for path in (
