@@ -499,6 +499,29 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertEqual(resumed.status_code, 200, resumed.text)
         self.assertIn(1, resumed.json()["lesson"]["completed_steps"])
 
+    def test_deactivation_and_reactivation_preserve_completed_lesson_steps(self):
+        from crownpath.auth import set_user_active
+
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        original_progress = first.json()["lesson"]["progress"]
+
+        set_user_active(self.user["user_id"], False)
+        set_user_active(self.user["user_id"], True)
+        self.client.cookies.clear()
+        login = self.client.post(
+            "/api/auth/login",
+            json={"email": self.email, "password": self.password},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        lesson = reopened.json()["lesson"]
+        self.assertEqual(lesson["completed_steps"], [1])
+        self.assertEqual(lesson["progress"], original_progress)
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
