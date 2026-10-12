@@ -244,6 +244,31 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_invalid_step_after_partial_progress_preserves_existing_completion(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/1/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_progress = first.json()["lesson"]["progress"]
+
+        invalid = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/999/complete")
+        self.assertEqual(invalid.status_code, 404, invalid.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["lesson"]["completed_steps"], [1])
+        self.assertEqual(reopened.json()["lesson"]["progress"], expected_progress)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                1,
+            )
+        finally:
+            db.close()
+
     def test_wrong_path_lesson_is_rejected(self):
         response = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(response.status_code, 404)
