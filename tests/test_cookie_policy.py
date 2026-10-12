@@ -55,3 +55,17 @@ class SessionCookiePolicyTest(unittest.TestCase):
         self.assertIn("Max-Age=0", cookie)
         self.assertIn("Path=/", cookie)
         revoke.assert_called_once_with("simulated-session-token")
+
+    def test_logout_failure_does_not_clear_cookie_or_claim_success(self):
+        from fastapi.testclient import TestClient
+
+        client = TestClient(main.app)
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch.object(main, "revoke_access_token", side_effect=RuntimeError("unavailable")):
+            response = client.post(
+                "/api/auth/logout",
+                headers={"Origin": "http://testserver"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertNotEqual(response.json(), {"authenticated": False})
+        self.assertNotIn("crownpath_session=", response.headers.get("set-cookie", ""))
