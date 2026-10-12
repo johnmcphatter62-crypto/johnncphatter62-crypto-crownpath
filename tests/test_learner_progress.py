@@ -281,6 +281,32 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_zero_and_negative_step_numbers_cannot_create_progress(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        for step_number in (0, -1):
+            with self.subTest(step_number=step_number):
+                response = self.client.post(
+                    f"/api/learner/lessons/{lesson_id}/steps/{step_number}/complete"
+                )
+                self.assertIn(response.status_code, (404, 422), response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
