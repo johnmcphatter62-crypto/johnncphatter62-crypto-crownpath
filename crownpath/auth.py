@@ -347,11 +347,13 @@ def set_user_role(user_id: str, role: str, active: bool | None = None):
             raise ValueError("User not found.")
         if user.role == "OWNER":
             raise ValueError("Owner role cannot be changed here.")
+        role_changed = user.role != role
         user.role = role
         user.track = role
         if active is not None:
             user.active = bool(active)
-        if active is False:
+        # Revoke sessions on any role change, even when the account remains active.
+        if role_changed or active is False:
             db.execute(update(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "SESSION", AuthToken.used_at.is_(None)).values(used_at=now_utc()))
         db.commit()
         db.refresh(user)
