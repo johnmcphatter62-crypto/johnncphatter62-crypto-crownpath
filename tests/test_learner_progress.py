@@ -269,6 +269,33 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_invalid_step_after_full_completion_preserves_completed_lesson(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        completed = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+        self.assertEqual(completed.status_code, 200, completed.text)
+        expected_steps = completed.json()["lesson"]["completed_steps"]
+
+        invalid = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/999/complete")
+        self.assertEqual(invalid.status_code, 404, invalid.text)
+
+        reopened = self.client.post(f"/api/learner/lessons/{lesson_id}/open")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        lesson = reopened.json()["lesson"]
+        self.assertEqual(lesson["status"], "COMPLETED")
+        self.assertEqual(lesson["progress"], 100)
+        self.assertEqual(lesson["completed_steps"], expected_steps)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                len(expected_steps),
+            )
+        finally:
+            db.close()
+
     def test_wrong_path_lesson_is_rejected(self):
         response = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(response.status_code, 404)
