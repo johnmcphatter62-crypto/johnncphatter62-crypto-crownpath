@@ -569,6 +569,38 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertEqual(lesson["completed_steps"], [1])
         self.assertEqual(lesson["progress"], expected_progress)
 
+    def test_switching_tracks_does_not_transfer_lesson_completion(self):
+        self.login_as_role("BARBER")
+        barber_id = "barber-foundations"
+        completed = self.client.post(f"/api/learner/lessons/{barber_id}/complete")
+        self.assertEqual(completed.status_code, 200, completed.text)
+
+        self.login_as_role("COSMETOLOGY_PRO")
+        dashboard = self.client.get("/api/learner/dashboard")
+        self.assertEqual(dashboard.status_code, 200, dashboard.text)
+        modules = dashboard.json()["modules"]
+        self.assertNotIn(barber_id, {module["lesson_id"] for module in modules})
+        cosmetology_id = "cosmetology-foundations"
+        cosmetology = next(module for module in modules if module["lesson_id"] == cosmetology_id)
+        self.assertEqual(cosmetology["progress"], 0)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=cosmetology_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=cosmetology_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
