@@ -222,6 +222,28 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         invalid_step = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/999/complete")
         self.assertEqual(invalid_step.status_code, 404)
 
+    def test_out_of_range_step_does_not_create_progress_records(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        response = self.client.post(f"/api/learner/lessons/{lesson_id}/steps/999/complete")
+        self.assertEqual(response.status_code, 404, response.text)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                0,
+            )
+        finally:
+            db.close()
+
     def test_wrong_path_lesson_is_rejected(self):
         response = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(response.status_code, 404)
