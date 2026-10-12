@@ -200,6 +200,37 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         wrong_barber = self.client.post("/api/learner/lessons/barber-foundations/open")
         self.assertEqual(wrong_barber.status_code, 404)
 
+    def test_scalp_pilot_learner_journey_preserves_camera_lesson_as_unstarted(self):
+        for role, prefix in (("BARBER", "barber"), ("COSMETOLOGY_PRO", "cosmetology")):
+            with self.subTest(role=role):
+                self.login_as_role(role)
+                science_id = f"{prefix}-hair-scalp"
+                camera_id = f"{prefix}-scalp-camera-assessment"
+
+                opened = self.client.post(f"/api/learner/lessons/{science_id}/open")
+                self.assertEqual(opened.status_code, 200, opened.text)
+                science = opened.json()["lesson"]
+                self.assert_learner_safe(science["content"])
+                self.assertGreater(science["total_steps"], 0)
+
+                for step_index in range(1, science["total_steps"] + 1):
+                    completed = self.client.post(
+                        f"/api/learner/lessons/{science_id}/steps/{step_index}/complete"
+                    )
+                    self.assertEqual(completed.status_code, 200, completed.text)
+
+                dashboard = self.client.get("/api/learner/dashboard")
+                self.assertEqual(dashboard.status_code, 200, dashboard.text)
+                modules = {item["lesson_id"]: item for item in dashboard.json()["modules"]}
+                self.assertEqual(modules[science_id]["progress"], 100)
+                self.assertEqual(modules[camera_id]["progress"], 0)
+
+                camera = self.client.post(f"/api/learner/lessons/{camera_id}/open")
+                self.assertEqual(camera.status_code, 200, camera.text)
+                self.assert_learner_safe(camera.json()["lesson"]["content"])
+                self.assertEqual(camera.json()["lesson"]["completed_steps"], [])
+                self.assertEqual(camera.json()["lesson"]["progress"], 0)
+
     def test_four_step_expanded_lesson_reaches_100_percent(self):
         self.login_as_role("BARBER")
         lesson_id = "barber-scalp-camera-assessment"
