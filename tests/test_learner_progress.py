@@ -654,6 +654,37 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
             self.assertEqual(lesson["progress"], 100)
             self.assertEqual(lesson["completed_steps"], expected_steps)
 
+    def test_repeated_full_lesson_completion_is_idempotent(self):
+        lesson_id = self.client.get("/api/learner/dashboard").json()["modules"][0]["lesson_id"]
+        first = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+        self.assertEqual(first.status_code, 200, first.text)
+        expected_steps = first.json()["lesson"]["total_steps"]
+
+        for _ in range(3):
+            response = self.client.post(f"/api/learner/lessons/{lesson_id}/complete")
+            self.assertEqual(response.status_code, 200, response.text)
+            lesson = response.json()["lesson"]
+            self.assertEqual(lesson["status"], "COMPLETED")
+            self.assertEqual(lesson["progress"], 100)
+            self.assertEqual(len(lesson["completed_steps"]), expected_steps)
+
+        db = session()
+        try:
+            self.assertEqual(
+                db.query(LearnerProgress).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                1,
+            )
+            self.assertEqual(
+                db.query(LearnerLessonStep).filter_by(
+                    user_id=self.user["user_id"], lesson_id=lesson_id
+                ).count(),
+                expected_steps,
+            )
+        finally:
+            db.close()
+
     def test_instructor_cannot_use_learner_endpoints(self):
         set_user_role(self.user["user_id"], "INSTRUCTOR", True)
         # Role changes revoke existing sessions, even if the account remains active.
