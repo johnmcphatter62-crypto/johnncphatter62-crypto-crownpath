@@ -542,6 +542,40 @@ class PostgresAuthIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_owner_cannot_be_disabled_or_reassigned_by_standard_account_functions(self):
+        from sqlalchemy import update
+        from crownpath.auth import set_user_active, set_user_role
+
+        email = f"crownpath-owner-guard-{uuid.uuid4().hex[:10]}@example.com"
+        created = create_user("Synthetic Owner Guard", email, "CrownPath-Owner-Guard-2026!", "HOME_CARE")
+        try:
+            # Synthetic owner exists only in disposable CI PostgreSQL.
+            db = session()
+            try:
+                db.execute(update(User).where(User.user_id == created["user_id"]).values(role="OWNER", track="OWNER"))
+                db.commit()
+            finally:
+                db.close()
+            with self.assertRaisesRegex(ValueError, "Owner account cannot be disabled"):
+                set_user_active(created["user_id"], False)
+            with self.assertRaisesRegex(ValueError, "Owner role cannot be changed"):
+                set_user_role(created["user_id"], "INSTRUCTOR", False)
+            db = session()
+            try:
+                owner = db.get(User, created["user_id"])
+                self.assertEqual(owner.role, "OWNER")
+                self.assertTrue(owner.active)
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == created["user_id"]))
+                db.execute(delete(User).where(User.user_id == created["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_deactivated_account_cannot_access_authenticated_endpoint(self):
         from fastapi.testclient import TestClient
         from crownpath.main import app
