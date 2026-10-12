@@ -117,11 +117,15 @@ def _active_session(user_id: str, session_id: str) -> bool:
 def decode_access_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("purpose") not in {None, "session"}:
+        if payload.get("purpose") != "session":
             return None
         user_id = payload.get("sub")
         session_id = payload.get("jti")
-        if session_id and not _active_session(user_id, session_id):
+        if not isinstance(user_id, str) or not user_id:
+            return None
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        if not _active_session(user_id, session_id):
             return None
         return user_id
     except InvalidTokenError:
@@ -131,7 +135,7 @@ def decode_access_token(token: str):
 def revoke_access_token(token: str) -> bool:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("purpose") not in {None, "session"}:
+        if payload.get("purpose") != "session":
             return False
         user_id = payload.get("sub")
         session_id = payload.get("jti")
@@ -343,10 +347,14 @@ def set_user_role(user_id: str, role: str, active: bool | None = None):
             raise ValueError("User not found.")
         if user.role == "OWNER":
             raise ValueError("Owner role cannot be changed here.")
+        role_changed = user.role != role
         user.role = role
         user.track = role
         if active is not None:
             user.active = bool(active)
+        # Revoke sessions on any role change, even when the account remains active.
+        if role_changed or active is False:
+            db.execute(update(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "SESSION", AuthToken.used_at.is_(None)).values(used_at=now_utc()))
         db.commit()
         db.refresh(user)
         return _user_dict(user)
@@ -363,6 +371,8 @@ def set_user_active(user_id: str, active: bool):
         if user.role == "OWNER" and not active:
             raise ValueError("Owner account cannot be disabled here.")
         user.active = bool(active)
+        if not active:
+            db.execute(update(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "SESSION", AuthToken.used_at.is_(None)).values(used_at=now_utc()))
         db.commit()
         db.refresh(user)
         return _user_dict(user)

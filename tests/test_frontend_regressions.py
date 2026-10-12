@@ -10,6 +10,10 @@ class FrontendRegressionTest(unittest.TestCase):
         cls.app_js = (root / "frontend" / "app.js").read_text(encoding="utf-8")
         cls.index_html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
 
+    def test_api_fetch_restricts_credentials_and_mode_to_same_origin(self):
+        self.assertIn("credentials:'same-origin'", self.app_js)
+        self.assertIn("mode:'same-origin'", self.app_js)
+
     def test_learner_ui_does_not_call_bulk_complete_endpoint(self):
         bulk_complete = re.compile(
             r"/api/learner/lessons/\$\{encodeURIComponent\([^)]*\)\}/complete`\s*,\s*\{method:'POST'"

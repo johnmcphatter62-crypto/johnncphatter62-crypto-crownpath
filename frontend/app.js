@@ -24,7 +24,7 @@ const curriculumMessage=document.querySelector('#curriculumMessage');
 const curriculumStructure=document.querySelector('#curriculumStructure');
 let activeLessonId=null;
 let mfaChallenge=null;
-async function jsonRequest(url,options={}){const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});let data={};try{data=await response.json()}catch(_){data={}}if(!response.ok)throw new Error(data.detail||'CrownPath request could not be completed.');return data}
+async function jsonRequest(url,options={}){const response=await fetch(url,{...options,credentials:'same-origin',mode:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})}});let data={};try{data=await response.json()}catch(_){data={}}if(!response.ok)throw new Error(data.detail||'CrownPath request could not be completed.');return data}
 async function showHealth(){try{output.textContent=JSON.stringify(await jsonRequest('/api/health'),null,2)}catch(e){output.textContent='CrownPath health check unavailable: '+e.message}}
 function resetMfaLogin(){mfaChallenge=null;mfaLoginForm.hidden=true;document.querySelector('#loginForm').hidden=false;document.querySelector('#mfaLoginCode').value=''}
 function hideRecoveryCodes(){mfaRecoveryCodes.textContent='';mfaRecoveryPanel.hidden=true}

@@ -28,6 +28,7 @@ class MfaIntegrationTest(unittest.TestCase):
 
     def setUp(self):
         self.client = TestClient(app)
+        self.client.headers.update({'Origin': 'http://testserver'})
         suffix = uuid.uuid4().hex[:10]
         self.email = f"mfa-user-{suffix}@example.com"
         self.password = "CrownPath-MFA-2026!"

@@ -25,6 +25,7 @@ class InstructorRequestIntegrationTest(unittest.TestCase):
 
     def setUp(self):
         self.client = TestClient(app)
+        self.client.headers.update({'Origin': 'http://testserver'})
         suffix = uuid.uuid4().hex[:10]
         self.learner_email = f"instructor-applicant-{suffix}@example.com"
         self.owner_email = f"owner-reviewer-{suffix}@example.com"

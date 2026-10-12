@@ -9,7 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
 from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
-from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
+from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
 from crownpath.startup_guard import validate_startup
@@ -254,8 +254,16 @@ def mfa_enable(payload:MfaEnableRequest,user=Depends(current_user)):
     return {"mfa_enabled":True,"recovery_codes":recovery_codes,"user":public_user(get_user_by_id(user["user_id"]))}
 
 @app.post("/api/auth/logout")
-def logout(response:Response):
-    response.delete_cookie("crownpath_session",path="/"); return {"authenticated":False}
+def logout(request:Request, response:Response):
+    token = request.cookies.get("crownpath_session")
+    if token:
+        try:
+            revoke_access_token(token)
+        except Exception:
+            # A database failure must not be reported as successful revocation.
+            raise HTTPException(503, "Logout could not be confirmed. Please retry.")
+    response.delete_cookie("crownpath_session", path="/")
+    return {"authenticated":False}
 
 @app.get("/api/auth/me")
 def me(user=Depends(current_user)):
