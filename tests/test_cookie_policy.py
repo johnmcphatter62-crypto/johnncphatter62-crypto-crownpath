@@ -37,3 +37,21 @@ class SessionCookiePolicyTest(unittest.TestCase):
             self.assertIn("Secure", cookie)
         else:
             self.assertNotIn("Secure", cookie)
+
+    def test_logout_clears_session_cookie_after_revocation(self):
+        from fastapi.testclient import TestClient
+
+        client = TestClient(main.app)
+        client.cookies.set("crownpath_session", "simulated-session-token")
+        with patch.object(main, "revoke_access_token", return_value=True) as revoke:
+            response = client.post(
+                "/api/auth/logout",
+                headers={"Origin": "http://testserver"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"authenticated": False})
+        cookie = response.headers.get("set-cookie", "")
+        self.assertIn("crownpath_session=", cookie)
+        self.assertIn("Max-Age=0", cookie)
+        self.assertIn("Path=/", cookie)
+        revoke.assert_called_once_with("simulated-session-token")
