@@ -79,6 +79,41 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertTrue(content.get("steps"))
         self.assertFalse(FORBIDDEN_LEARNER_KEYS.intersection(collect_keys(content)))
 
+    def test_enrollment_requires_both_approval_flags(self):
+        flags = (
+            "CROWNPATH_LEARNER_ACCESS_APPROVED",
+            "CROWNPATH_LEARNER_ENROLLMENT_APPROVED",
+        )
+        originals = {flag: os.environ.get(flag) for flag in flags}
+        self.client.cookies.clear()
+        try:
+            for disabled_flag in flags:
+                with self.subTest(disabled_flag=disabled_flag):
+                    for flag in flags:
+                        os.environ[flag] = "false" if flag == disabled_flag else "true"
+                    response = self.client.post(
+                        "/api/auth/register",
+                        json={
+                            "name": "Blocked Pilot Learner",
+                            "email": f"blocked-{uuid.uuid4().hex[:12]}@example.com",
+                            "password": "CrownPath-Pilot-2026!",
+                            "role": "BARBER",
+                        },
+                    )
+                    self.assertEqual(response.status_code, 403, response.text)
+                    self.assertFalse(self.client.cookies.get("crownpath_session"))
+        finally:
+            for flag, original in originals.items():
+                if original is None:
+                    os.environ.pop(flag, None)
+                else:
+                    os.environ[flag] = original
+            self.client.cookies.clear()
+            signed_in = self.client.post(
+                "/api/auth/login", json={"email": self.email, "password": self.password}
+            )
+            self.assertEqual(signed_in.status_code, 200, signed_in.text)
+
     def test_registration_rejects_privileged_roles_and_duplicate_email(self):
         self.client.cookies.clear()
         for role in ("OWNER", "ADMIN", "INSTRUCTOR"):
