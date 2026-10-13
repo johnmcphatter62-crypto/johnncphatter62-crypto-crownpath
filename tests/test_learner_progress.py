@@ -79,6 +79,37 @@ class LearnerProgressIntegrationTest(unittest.TestCase):
         self.assertTrue(content.get("steps"))
         self.assertFalse(FORBIDDEN_LEARNER_KEYS.intersection(collect_keys(content)))
 
+    def test_registration_rejects_privileged_roles_and_duplicate_email(self):
+        self.client.cookies.clear()
+        for role in ("OWNER", "ADMIN", "INSTRUCTOR"):
+            with self.subTest(role=role):
+                response = self.client.post(
+                    "/api/auth/register",
+                    json={
+                        "name": "Unauthorized Learner",
+                        "email": f"privileged-{uuid.uuid4().hex[:12]}@example.com",
+                        "password": "CrownPath-Pilot-2026!",
+                        "role": role,
+                    },
+                )
+                self.assertEqual(response.status_code, 400, response.text)
+
+        duplicate = self.client.post(
+            "/api/auth/register",
+            json={
+                "name": "Duplicate Learner",
+                "email": self.email,
+                "password": "CrownPath-Pilot-2026!",
+                "role": "BARBER",
+            },
+        )
+        self.assertEqual(duplicate.status_code, 400, duplicate.text)
+        self.client.cookies.clear()
+        signed_in = self.client.post(
+            "/api/auth/login", json={"email": self.email, "password": self.password}
+        )
+        self.assertEqual(signed_in.status_code, 200, signed_in.text)
+
     def test_registration_login_and_scalp_pilot_journey(self):
         self.client.cookies.clear()
         for role, prefix in (("BARBER", "barber"), ("COSMETOLOGY_PRO", "cosmetology")):
