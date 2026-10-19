@@ -1,0 +1,23 @@
+name: CrownPath SQLite UTC Auth Review
+on:
+  pull_request:
+    paths:
+      - 'crownpath/auth.py'
+      - 'tests/test_auth_sqlite_utc.py'
+      - '.github/workflows/auth-sqlite-review.yml'
+jobs:
+  sqlite-auth:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+      - name: Run original auth against disposable SQLite
+        run: python -m pytest -q tests/test_auth_sqlite_utc.py
