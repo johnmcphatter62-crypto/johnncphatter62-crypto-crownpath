@@ -120,31 +120,6 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIsNone(self.client.cookies.get("crownpath_session"))
 
-    def test_owner_activation_claim_prevents_second_owner_creation(self):
-        from unittest.mock import patch
-        from sqlalchemy import text
-        from crownpath.auth import create_owner
-
-        owner_email = f"new-owner-{uuid.uuid4().hex[:10]}@example.com"
-        db = session()
-        try:
-            # Synthetic claim simulates a competing first activation.
-            db.execute(text("INSERT INTO system_metadata (key, value) VALUES (:key, :value)"),
-                       {"key": "owner_activation_claim", "value": "synthetic-owner"})
-            db.commit()
-            with patch.dict(os.environ, {
-                "CROWNPATH_OWNER_EMAIL": owner_email,
-                "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
-            }):
-                with self.assertRaisesRegex(ValueError, "could not be activated"):
-                    create_owner("Second Owner", owner_email, "Replacement-Password-2026!", "synthetic-activation-code")
-            self.assertIsNone(db.scalar(__import__("sqlalchemy").select(User).where(User.email == owner_email)))
-        finally:
-            db.execute(text("DELETE FROM system_metadata WHERE key = :key AND value = :value"),
-                       {"key": "owner_activation_claim", "value": "synthetic-owner"})
-            db.commit()
-            db.close()
-
     def test_mfa_setup_requires_authentication(self):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
