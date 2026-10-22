@@ -110,6 +110,8 @@ def current_user(request:Request):
 
 def require_permission(permission:str):
     def dependency(user=Depends(current_user)):
+        if user["role"] == "OWNER" and not user["mfa_enabled"]:
+            raise HTTPException(403,"Owner MFA enrollment is required before privileged access.")
         if not has_permission(user,permission): raise HTTPException(403,"Permission denied.")
         return user
     return dependency
