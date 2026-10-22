@@ -9,7 +9,7 @@ import jwt
 import pyotp
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, update, text
 from sqlalchemy.exc import IntegrityError
 
 from crownpath.database import session
@@ -252,6 +252,10 @@ def create_user(name: str, email: str, password: str, role: str):
     )
     db = session()
     try:
+        # A unique metadata key serializes first-Owner creation across workers.
+        # The claim and new user commit or roll back as one transaction.
+        db.execute(text("INSERT INTO system_metadata (key, value) VALUES (:key, :value)"),
+                   {"key": "owner_activation_claim", "value": user.user_id})
         db.add(user)
         db.commit()
         db.refresh(user)
