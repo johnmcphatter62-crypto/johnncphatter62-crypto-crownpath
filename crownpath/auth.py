@@ -289,19 +289,9 @@ def create_owner(name: str, email: str, password: str, activation_code: str):
     try:
         existing = db.scalar(select(User).where(User.email == supplied_email))
         if existing:
-            if existing.mfa_enabled:
-                raise ValueError("Existing account requires secure MFA recovery before Owner activation.")
-            existing.name = name.strip()
-            existing.password_hash = hash_password(password)
-            existing.role = "OWNER"
-            existing.track = "OWNER"
-            existing.active = True
-            existing.email_verified = True
-            existing.failed_login_attempts = 0
-            existing.locked_until = None
-            db.commit()
-            db.refresh(existing)
-            return _user_dict(existing)
+            # Activation is for a new Owner identity only. Never overwrite an
+            # existing account password or promote an account through this path.
+            raise ValueError("Existing account requires separately verified Owner provisioning.")
 
         user = User(
             user_id=f"CP-USR-{uuid.uuid4().hex[:12].upper()}",
