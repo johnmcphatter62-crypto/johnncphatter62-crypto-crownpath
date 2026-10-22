@@ -289,6 +289,8 @@ def create_owner(name: str, email: str, password: str, activation_code: str):
     try:
         existing = db.scalar(select(User).where(User.email == supplied_email))
         if existing:
+            if existing.mfa_enabled:
+                raise ValueError("Existing account requires secure MFA recovery before Owner activation.")
             existing.name = name.strip()
             existing.password_hash = hash_password(password)
             existing.role = "OWNER"
