@@ -120,6 +120,37 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIsNone(self.client.cookies.get("crownpath_session"))
 
+    def test_owner_permission_requires_mfa_but_enrollment_remains_accessible(self):
+        from unittest.mock import patch
+        from crownpath.auth import get_user_by_id
+        db = session()
+        try:
+            owner = db.get(User, self.user["user_id"])
+            owner.role = "OWNER"
+            owner.track = "OWNER"
+            db.commit()
+        finally:
+            db.close()
+        try:
+            with patch.dict(os.environ, {"CROWNPATH_OWNER_ONLY": "true"}):
+                self.login_without_mfa()
+                denied = self.client.get("/api/owner/dashboard")
+                self.assertEqual(denied.status_code, 403, denied.text)
+                setup = self.client.post("/api/auth/mfa/setup")
+                self.assertEqual(setup.status_code, 200, setup.text)
+                enabled = self.client.post("/api/auth/mfa/enable",
+                                           json={"code": pyotp.TOTP(setup.json()["secret"]).now()})
+                self.assertEqual(enabled.status_code, 200, enabled.text)
+        finally:
+            db = session()
+            try:
+                owner = db.get(User, self.user["user_id"])
+                owner.role = "HOME_CARE"
+                owner.track = "HOME_CARE"
+                db.commit()
+            finally:
+                db.close()
+
     def test_mfa_setup_requires_authentication(self):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
