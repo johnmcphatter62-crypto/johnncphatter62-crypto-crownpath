@@ -68,6 +68,41 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertTrue(all(len(item) == 8 and item.isdigit() for item in recovery_codes))
         return secret, recovery_codes
 
+    def test_owner_activation_rejects_existing_mfa_account_without_mutation(self):
+        from unittest.mock import patch
+        from crownpath.auth import create_owner, get_user_by_id
+
+        self.enable_mfa()
+        before = get_user_by_id(self.user["user_id"])
+        with patch.dict(os.environ, {
+            "CROWNPATH_OWNER_EMAIL": self.email,
+            "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
+        }):
+            with self.assertRaisesRegex(ValueError, "secure MFA recovery"):
+                create_owner("Changed Owner", self.email, "Replacement-Password-2026!", "synthetic-activation-code")
+
+        after = get_user_by_id(self.user["user_id"])
+        self.assertEqual(after["role"], before["role"])
+        self.assertEqual(after["password_hash"], before["password_hash"])
+        self.assertEqual(after["mfa_secret"], before["mfa_secret"])
+        self.assertTrue(after["mfa_enabled"])
+
+    def test_owner_activation_endpoint_does_not_issue_session_for_mfa_account(self):
+        self.enable_mfa()
+        self.client.cookies.clear()
+        with __import__("unittest.mock", fromlist=["patch"]).patch.dict(os.environ, {
+            "CROWNPATH_OWNER_EMAIL": self.email,
+            "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
+        }):
+            response = self.client.post("/api/auth/owner-activation", json={
+                "name": "Changed Owner",
+                "email": self.email,
+                "password": "Replacement-Password-2026!",
+                "activation_code": "synthetic-activation-code",
+            })
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIsNone(self.client.cookies.get("crownpath_session"))
+
     def test_mfa_setup_requires_authentication(self):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
