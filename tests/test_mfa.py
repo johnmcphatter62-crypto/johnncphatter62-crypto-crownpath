@@ -78,7 +78,7 @@ class MfaIntegrationTest(unittest.TestCase):
             "CROWNPATH_OWNER_EMAIL": self.email,
             "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
         }):
-            with self.assertRaisesRegex(ValueError, "secure MFA recovery"):
+            with self.assertRaisesRegex(ValueError, "separately verified Owner provisioning"):
                 create_owner("Changed Owner", self.email, "Replacement-Password-2026!", "synthetic-activation-code")
 
         after = get_user_by_id(self.user["user_id"])
@@ -86,6 +86,23 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertEqual(after["password_hash"], before["password_hash"])
         self.assertEqual(after["mfa_secret"], before["mfa_secret"])
         self.assertTrue(after["mfa_enabled"])
+
+    def test_owner_activation_rejects_existing_account_without_mfa(self):
+        from unittest.mock import patch
+        from crownpath.auth import create_owner, get_user_by_id
+
+        before = get_user_by_id(self.user["user_id"])
+        with patch.dict(os.environ, {
+            "CROWNPATH_OWNER_EMAIL": self.email,
+            "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
+        }):
+            with self.assertRaisesRegex(ValueError, "separately verified Owner provisioning"):
+                create_owner("Changed Owner", self.email, "Replacement-Password-2026!", "synthetic-activation-code")
+
+        after = get_user_by_id(self.user["user_id"])
+        self.assertEqual(after["role"], before["role"])
+        self.assertEqual(after["password_hash"], before["password_hash"])
+        self.assertFalse(after["mfa_enabled"])
 
     def test_owner_activation_endpoint_does_not_issue_session_for_mfa_account(self):
         self.enable_mfa()
