@@ -2,6 +2,8 @@ import os
 import unittest
 import uuid
 
+import pyotp
+
 os.environ.setdefault("CROWNPATH_ENV", "staging")
 os.environ.setdefault("CROWNPATH_SECRET_KEY", "ci-only-secret-key-for-instructor-tests-123456789")
 
@@ -58,6 +60,11 @@ class InstructorRequestIntegrationTest(unittest.TestCase):
         self.client.cookies.clear()
         response = self.client.post("/api/auth/login", json={"email": email, "password": self.password})
         self.assertEqual(response.status_code, 200, response.text)
+        if email == self.owner_email:
+            setup = self.client.post("/api/auth/mfa/setup")
+            self.assertEqual(setup.status_code, 200, setup.text)
+            enabled = self.client.post("/api/auth/mfa/enable", json={"code": pyotp.TOTP(setup.json()["secret"]).now()})
+            self.assertEqual(enabled.status_code, 200, enabled.text)
         return response
 
     def submit_request(self, statement="I am qualified and would like to teach CrownPath learners."):
