@@ -136,11 +136,17 @@ class MfaIntegrationTest(unittest.TestCase):
                 self.login_without_mfa()
                 denied = self.client.get("/api/audio/stations")
                 self.assertEqual(denied.status_code, 403, denied.text)
+                enrollment_cookie = self.client.cookies.get("crownpath_session")
                 setup = self.client.post("/api/auth/mfa/setup")
                 self.assertEqual(setup.status_code, 200, setup.text)
                 enabled = self.client.post("/api/auth/mfa/enable",
                                            json={"code": pyotp.TOTP(setup.json()["secret"]).now()})
                 self.assertEqual(enabled.status_code, 200, enabled.text)
+                verified_cookie = self.client.cookies.get("crownpath_session")
+                self.assertNotEqual(enrollment_cookie, verified_cookie)
+                self.assertEqual(self.client.get("/api/audio/stations").status_code, 200)
+                self.client.cookies.set("crownpath_session", enrollment_cookie)
+                self.assertEqual(self.client.get("/api/audio/stations").status_code, 401)
         finally:
             db = session()
             try:
