@@ -20,6 +20,7 @@ from crownpath.models import AuthToken, User
 class OwnerOnlyAccessTest(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
+        self.client.headers.update({'Origin': 'http://testserver'})
         self.password = "CrownPath-Owner-Test-2026!"
         self.suffix = uuid.uuid4().hex[:12]
         self.user_ids = []
