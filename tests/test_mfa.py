@@ -134,7 +134,7 @@ class MfaIntegrationTest(unittest.TestCase):
         try:
             with patch.dict(os.environ, {"CROWNPATH_OWNER_ONLY": "true"}):
                 self.login_without_mfa()
-                denied = self.client.get("/api/owner/dashboard")
+                denied = self.client.get("/api/audio/stations")
                 self.assertEqual(denied.status_code, 403, denied.text)
                 setup = self.client.post("/api/auth/mfa/setup")
                 self.assertEqual(setup.status_code, 200, setup.text)
