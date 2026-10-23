@@ -72,13 +72,14 @@ def _hash_session_id(session_id: str) -> str:
     return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, mfa_verified: bool = False) -> str:
     now = now_utc()
     expires_at = now + timedelta(minutes=ACCESS_TOKEN_MINUTES)
     session_id = secrets.token_urlsafe(24)
     payload = {
         "sub": user_id,
         "purpose": "session",
+        "mfa_verified": mfa_verified,
         "iat": now,
         "exp": expires_at,
         "jti": session_id,
@@ -130,6 +131,17 @@ def decode_access_token(token: str):
         return user_id
     except InvalidTokenError:
         return None
+
+
+def session_mfa_verified(token: str) -> bool:
+    """Require a live server-tracked session with explicit MFA assurance."""
+    if not decode_access_token(token):
+        return False
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("mfa_verified") is True
+    except InvalidTokenError:
+        return False
 
 
 def revoke_access_token(token: str) -> bool:
