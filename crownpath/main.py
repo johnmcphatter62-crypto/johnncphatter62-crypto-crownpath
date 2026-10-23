@@ -272,8 +272,12 @@ def logout(request:Request, response:Response):
     return {"authenticated":False}
 
 @app.get("/api/auth/me")
-def me(user=Depends(current_user)):
-    data=public_user(user); data["permissions"]=sorted(permissions_for_role(user["role"])); return data
+def me(request:Request,user=Depends(current_user)):
+    data=public_user(user)
+    owner_needs_mfa = user["role"] == "OWNER" and (not user["mfa_enabled"] or not session_mfa_verified(request.cookies.get("crownpath_session", "")))
+    data["permissions"] = [] if owner_needs_mfa else sorted(permissions_for_role(user["role"]))
+    data["mfa_verification_required"] = owner_needs_mfa
+    return data
 
 @app.get("/api/learner/dashboard")
 def learner_dashboard(user=Depends(require_permission("academy.view"))):
