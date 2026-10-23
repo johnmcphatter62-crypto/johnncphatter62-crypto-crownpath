@@ -9,7 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
 from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
-from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
+from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code, session_mfa_verified
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
 from crownpath.startup_guard import validate_startup
@@ -109,9 +109,9 @@ def current_user(request:Request):
     return user
 
 def require_permission(permission:str):
-    def dependency(user=Depends(current_user)):
-        if user["role"] == "OWNER" and not user["mfa_enabled"]:
-            raise HTTPException(403,"Owner MFA enrollment is required before privileged access.")
+    def dependency(request:Request,user=Depends(current_user)):
+        if user["role"] == "OWNER" and (not user["mfa_enabled"] or not session_mfa_verified(request.cookies.get("crownpath_session", ""))):
+            raise HTTPException(403,"Verified Owner MFA session is required before privileged access.")
         if not has_permission(user,permission): raise HTTPException(403,"Permission denied.")
         return user
     return dependency
@@ -237,7 +237,7 @@ def mfa_verify(payload:MfaVerifyRequest,response:Response):
     if not user or not user["active"] or not user["mfa_enabled"]: raise HTTPException(401,"MFA challenge is invalid or expired.")
     if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
     if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator or recovery code.")
-    token=create_access_token(user_id)
+    token=create_access_token(user_id, mfa_verified=True)
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(get_user_by_id(user_id))}
 
@@ -249,10 +249,14 @@ def mfa_setup(user=Depends(current_user)):
     return {"secret":secret,"provisioning_uri":uri,"message":"Add this account to your authenticator app, then enter the current 6-digit code to confirm."}
 
 @app.post("/api/auth/mfa/enable")
-def mfa_enable(payload:MfaEnableRequest,user=Depends(current_user)):
+def mfa_enable(payload:MfaEnableRequest,request:Request,response:Response,user=Depends(current_user)):
     if user["mfa_enabled"]: raise HTTPException(409,"Multi-factor authentication is already enabled.")
     recovery_codes=enable_mfa(user["user_id"],payload.code.strip())
     if not recovery_codes: raise HTTPException(400,"Authenticator code could not be verified.")
+    old_token=request.cookies.get("crownpath_session")
+    if old_token: revoke_access_token(old_token)
+    token=create_access_token(user["user_id"],mfa_verified=True)
+    response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"mfa_enabled":True,"recovery_codes":recovery_codes,"user":public_user(get_user_by_id(user["user_id"]))}
 
 @app.post("/api/auth/logout")
