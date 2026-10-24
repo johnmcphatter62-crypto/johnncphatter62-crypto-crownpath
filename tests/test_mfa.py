@@ -164,6 +164,38 @@ class MfaIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_expired_verified_owner_session_is_rejected(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from crownpath.auth import decode_access_token, now_utc, session_mfa_verified
+        db = session()
+        try:
+            owner = db.get(User, self.user["user_id"])
+            owner.role = "OWNER"
+            owner.track = "OWNER"
+            db.commit()
+        finally:
+            db.close()
+        with patch.dict(os.environ, {"CROWNPATH_OWNER_ONLY": "true"}):
+            self.enable_mfa()
+            token = self.client.cookies.get("crownpath_session")
+            self.assertTrue(session_mfa_verified(token))
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 200)
+            db = session()
+            try:
+                for row in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "SESSION",
+                    AuthToken.used_at.is_(None),
+                ):
+                    row.expires_at = now_utc() - timedelta(minutes=1)
+                db.commit()
+            finally:
+                db.close()
+            self.assertIsNone(decode_access_token(token))
+            self.assertFalse(session_mfa_verified(token))
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 401)
+
     def test_verified_owner_session_rejected_after_logout(self):
         from unittest.mock import patch
         from crownpath.auth import decode_access_token, session_mfa_verified
