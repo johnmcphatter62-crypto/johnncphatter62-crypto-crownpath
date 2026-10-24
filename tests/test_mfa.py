@@ -223,6 +223,30 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
 
+    def test_mfa_session_creation_failure_preserves_enrollment(self):
+        from unittest.mock import patch
+        from crownpath.auth import get_user_by_id
+        self.login_without_mfa()
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        enrollment_cookie = self.client.cookies.get("crownpath_session")
+        code = pyotp.TOTP(setup.json()["secret"]).now()
+        with patch("crownpath.main.create_access_token", side_effect=RuntimeError("simulated session failure")):
+            with self.assertRaisesRegex(RuntimeError, "simulated session failure"):
+                self.client.post("/api/auth/mfa/enable", json={"code": code})
+        self.assertTrue(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        self.assertEqual(self.client.cookies.get("crownpath_session"), enrollment_cookie)
+        self.assertEqual(self.client.get("/api/auth/me").status_code, 401)
+        self.client.cookies.clear()
+        login = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertTrue(login.json()["mfa_required"])
+        verified = self.client.post("/api/auth/mfa/verify", json={
+            "challenge": login.json()["challenge"], "code": pyotp.TOTP(setup.json()["secret"]).now(),
+        })
+        self.assertEqual(verified.status_code, 200, verified.text)
+        self.assertTrue(verified.json()["authenticated"])
+
     def test_recovery_token_write_failure_rolls_back_mfa_activation(self):
         from unittest.mock import patch
         from sqlalchemy.orm import Session as SqlAlchemySession
