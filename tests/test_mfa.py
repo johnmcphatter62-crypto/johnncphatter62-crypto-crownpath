@@ -223,6 +223,41 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
 
+    def test_simultaneous_mfa_confirmations_only_one_succeeds(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from crownpath.auth import enable_mfa, get_user_by_id
+        self.login_without_mfa()
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        code = pyotp.TOTP(setup.json()["secret"]).now()
+        gate = Barrier(2)
+
+        def confirm():
+            gate.wait(timeout=10)
+            return enable_mfa(self.user["user_id"], code)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(confirm)
+            second = pool.submit(confirm)
+            outcomes = [first.result(timeout=20), second.result(timeout=20)]
+        winners = [item for item in outcomes if item is not None]
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(len(winners[0]), 8)
+        self.assertTrue(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        db = session()
+        try:
+            hashes = [
+                item.token_hash for item in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "MFA_RECOVERY",
+                ).all()
+            ]
+            self.assertEqual(len(hashes), 8)
+            self.assertEqual(len(set(hashes)), 8)
+        finally:
+            db.close()
+
     def test_second_confirmation_cannot_replace_recovery_tokens(self):
         from crownpath.auth import enable_mfa
         self.login_without_mfa()
