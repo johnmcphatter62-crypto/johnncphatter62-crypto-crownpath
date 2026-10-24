@@ -223,6 +223,38 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
 
+    def test_second_confirmation_cannot_replace_recovery_tokens(self):
+        from crownpath.auth import enable_mfa
+        self.login_without_mfa()
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        code = pyotp.TOTP(setup.json()["secret"]).now()
+        first = enable_mfa(self.user["user_id"], code)
+        self.assertEqual(len(first), 8)
+        db = session()
+        try:
+            before = {
+                token.token_hash for token in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "MFA_RECOVERY",
+                ).all()
+            }
+        finally:
+            db.close()
+        self.assertEqual(len(before), 8)
+        self.assertIsNone(enable_mfa(self.user["user_id"], code))
+        db = session()
+        try:
+            after = {
+                token.token_hash for token in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "MFA_RECOVERY",
+                ).all()
+            }
+        finally:
+            db.close()
+        self.assertEqual(after, before)
+
     def test_stale_mfa_setup_cannot_activate_replaced_secret(self):
         from crownpath.auth import enable_mfa, get_user_by_id
         self.login_without_mfa()
