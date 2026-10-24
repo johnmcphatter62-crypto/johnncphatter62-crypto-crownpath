@@ -223,6 +223,23 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
 
+    def test_stale_mfa_setup_cannot_activate_replaced_secret(self):
+        from crownpath.auth import enable_mfa, get_user_by_id
+        self.login_without_mfa()
+        first = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(first.status_code, 200, first.text)
+        first_secret = first.json()["secret"]
+        second = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(second.status_code, 200, second.text)
+        second_secret = second.json()["secret"]
+        self.assertNotEqual(first_secret, second_secret)
+        self.assertIsNone(enable_mfa(self.user["user_id"], pyotp.TOTP(first_secret).now()))
+        self.assertFalse(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        codes = enable_mfa(self.user["user_id"], pyotp.TOTP(second_secret).now())
+        self.assertEqual(len(codes), 8)
+        self.assertTrue(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        self.assertIsNone(enable_mfa(self.user["user_id"], pyotp.TOTP(first_secret).now()))
+
     def test_mfa_session_creation_failure_preserves_enrollment(self):
         from unittest.mock import patch
         from crownpath.auth import get_user_by_id
