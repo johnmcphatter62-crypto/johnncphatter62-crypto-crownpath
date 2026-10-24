@@ -223,6 +223,37 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
 
+    def test_recovery_token_write_failure_rolls_back_mfa_activation(self):
+        from unittest.mock import patch
+        from sqlalchemy.orm import Session as SqlAlchemySession
+        from crownpath.auth import enable_mfa, get_user_by_id
+        setup_login = self.login_without_mfa()
+        self.assertEqual(setup_login.status_code, 200)
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        secret = setup.json()["secret"]
+        original_commit = SqlAlchemySession.commit
+
+        def fail_recovery_commit(db):
+            if any(isinstance(item, AuthToken) and item.token_type == "MFA_RECOVERY"
+                   for item in db.new):
+                raise RuntimeError("simulated recovery-token persistence failure")
+            return original_commit(db)
+
+        with patch.object(SqlAlchemySession, "commit", fail_recovery_commit):
+            with self.assertRaisesRegex(RuntimeError, "simulated recovery-token"):
+                enable_mfa(self.user["user_id"], pyotp.TOTP(secret).now())
+        self.assertFalse(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        db = session()
+        try:
+            recovery_count = db.query(AuthToken).filter(
+                AuthToken.user_id == self.user["user_id"],
+                AuthToken.token_type == "MFA_RECOVERY",
+            ).count()
+            self.assertEqual(recovery_count, 0)
+        finally:
+            db.close()
+
     def test_invalid_enable_code_does_not_enable_mfa(self):
         self.login_without_mfa()
         setup = self.client.post("/api/auth/mfa/setup")
