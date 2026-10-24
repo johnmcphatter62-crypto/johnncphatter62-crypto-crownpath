@@ -68,9 +68,299 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertTrue(all(len(item) == 8 and item.isdigit() for item in recovery_codes))
         return secret, recovery_codes
 
+    def test_owner_activation_rejects_existing_mfa_account_without_mutation(self):
+        from unittest.mock import patch
+        from crownpath.auth import create_owner, get_user_by_id
+
+        self.enable_mfa()
+        before = get_user_by_id(self.user["user_id"])
+        with patch.dict(os.environ, {
+            "CROWNPATH_OWNER_EMAIL": self.email,
+            "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
+        }):
+            with self.assertRaisesRegex(ValueError, "separately verified Owner provisioning"):
+                create_owner("Changed Owner", self.email, "Replacement-Password-2026!", "synthetic-activation-code")
+
+        after = get_user_by_id(self.user["user_id"])
+        self.assertEqual(after["role"], before["role"])
+        self.assertEqual(after["password_hash"], before["password_hash"])
+        self.assertEqual(after["mfa_secret"], before["mfa_secret"])
+        self.assertTrue(after["mfa_enabled"])
+
+    def test_owner_activation_rejects_existing_account_without_mfa(self):
+        from unittest.mock import patch
+        from crownpath.auth import create_owner, get_user_by_id
+
+        before = get_user_by_id(self.user["user_id"])
+        with patch.dict(os.environ, {
+            "CROWNPATH_OWNER_EMAIL": self.email,
+            "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
+        }):
+            with self.assertRaisesRegex(ValueError, "separately verified Owner provisioning"):
+                create_owner("Changed Owner", self.email, "Replacement-Password-2026!", "synthetic-activation-code")
+
+        after = get_user_by_id(self.user["user_id"])
+        self.assertEqual(after["role"], before["role"])
+        self.assertEqual(after["password_hash"], before["password_hash"])
+        self.assertFalse(after["mfa_enabled"])
+
+    def test_owner_activation_endpoint_does_not_issue_session_for_mfa_account(self):
+        self.enable_mfa()
+        self.client.cookies.clear()
+        with __import__("unittest.mock", fromlist=["patch"]).patch.dict(os.environ, {
+            "CROWNPATH_OWNER_EMAIL": self.email,
+            "CROWNPATH_OWNER_ACTIVATION_CODE": "synthetic-activation-code",
+        }):
+            response = self.client.post("/api/auth/owner-activation", json={
+                "name": "Changed Owner",
+                "email": self.email,
+                "password": "Replacement-Password-2026!",
+                "activation_code": "synthetic-activation-code",
+            })
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIsNone(self.client.cookies.get("crownpath_session"))
+
+    def test_owner_permission_requires_mfa_but_enrollment_remains_accessible(self):
+        from unittest.mock import patch
+        from crownpath.auth import get_user_by_id
+        db = session()
+        try:
+            owner = db.get(User, self.user["user_id"])
+            owner.role = "OWNER"
+            owner.track = "OWNER"
+            db.commit()
+        finally:
+            db.close()
+        try:
+            with patch.dict(os.environ, {"CROWNPATH_OWNER_ONLY": "true"}):
+                self.login_without_mfa()
+                denied = self.client.get("/api/audio/stations")
+                self.assertEqual(denied.status_code, 403, denied.text)
+                pre_mfa_identity = self.client.get("/api/auth/me")
+                self.assertEqual(pre_mfa_identity.status_code, 200, pre_mfa_identity.text)
+                self.assertEqual(pre_mfa_identity.json()["permissions"], [])
+                self.assertTrue(pre_mfa_identity.json()["mfa_verification_required"])
+                enrollment_cookie = self.client.cookies.get("crownpath_session")
+                setup = self.client.post("/api/auth/mfa/setup")
+                self.assertEqual(setup.status_code, 200, setup.text)
+                enabled = self.client.post("/api/auth/mfa/enable",
+                                           json={"code": pyotp.TOTP(setup.json()["secret"]).now()})
+                self.assertEqual(enabled.status_code, 200, enabled.text)
+                verified_cookie = self.client.cookies.get("crownpath_session")
+                self.assertNotEqual(enrollment_cookie, verified_cookie)
+                self.assertEqual(self.client.get("/api/audio/stations").status_code, 200)
+                verified_identity = self.client.get("/api/auth/me")
+                self.assertFalse(verified_identity.json()["mfa_verification_required"])
+                self.assertTrue(verified_identity.json()["permissions"])
+                self.client.cookies.set("crownpath_session", enrollment_cookie)
+                self.assertEqual(self.client.get("/api/audio/stations").status_code, 401)
+        finally:
+            db = session()
+            try:
+                owner = db.get(User, self.user["user_id"])
+                owner.role = "HOME_CARE"
+                owner.track = "HOME_CARE"
+                db.commit()
+            finally:
+                db.close()
+
+    def test_expired_verified_owner_session_is_rejected(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from crownpath.auth import decode_access_token, now_utc, session_mfa_verified
+        db = session()
+        try:
+            owner = db.get(User, self.user["user_id"])
+            owner.role = "OWNER"
+            owner.track = "OWNER"
+            db.commit()
+        finally:
+            db.close()
+        with patch.dict(os.environ, {"CROWNPATH_OWNER_ONLY": "true"}):
+            self.enable_mfa()
+            token = self.client.cookies.get("crownpath_session")
+            self.assertTrue(session_mfa_verified(token))
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 200)
+            db = session()
+            try:
+                for row in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "SESSION",
+                    AuthToken.used_at.is_(None),
+                ):
+                    row.expires_at = now_utc() - timedelta(minutes=1)
+                db.commit()
+            finally:
+                db.close()
+            self.assertIsNone(decode_access_token(token))
+            self.assertFalse(session_mfa_verified(token))
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 401)
+
+    def test_verified_owner_session_rejected_after_logout(self):
+        from unittest.mock import patch
+        from crownpath.auth import decode_access_token, session_mfa_verified
+        db = session()
+        try:
+            owner = db.get(User, self.user["user_id"])
+            owner.role = "OWNER"
+            owner.track = "OWNER"
+            db.commit()
+        finally:
+            db.close()
+        with patch.dict(os.environ, {"CROWNPATH_OWNER_ONLY": "true"}):
+            self.enable_mfa()
+            token = self.client.cookies.get("crownpath_session")
+            self.assertTrue(session_mfa_verified(token))
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 200)
+            logged_out = self.client.post("/api/auth/logout")
+            self.assertEqual(logged_out.status_code, 200, logged_out.text)
+            self.assertIsNone(decode_access_token(token))
+            self.assertFalse(session_mfa_verified(token))
+            self.client.cookies.set("crownpath_session", token)
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 401)
+
     def test_mfa_setup_requires_authentication(self):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
+
+    def test_simultaneous_mfa_confirmations_only_one_succeeds(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from crownpath.auth import enable_mfa, get_user_by_id
+        self.login_without_mfa()
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        code = pyotp.TOTP(setup.json()["secret"]).now()
+        gate = Barrier(2)
+
+        def confirm():
+            gate.wait(timeout=10)
+            return enable_mfa(self.user["user_id"], code)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(confirm)
+            second = pool.submit(confirm)
+            outcomes = [first.result(timeout=20), second.result(timeout=20)]
+        winners = [item for item in outcomes if item is not None]
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(len(winners[0]), 8)
+        self.assertTrue(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        db = session()
+        try:
+            hashes = [
+                item.token_hash for item in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "MFA_RECOVERY",
+                ).all()
+            ]
+            self.assertEqual(len(hashes), 8)
+            self.assertEqual(len(set(hashes)), 8)
+        finally:
+            db.close()
+
+    def test_second_confirmation_cannot_replace_recovery_tokens(self):
+        from crownpath.auth import enable_mfa
+        self.login_without_mfa()
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        code = pyotp.TOTP(setup.json()["secret"]).now()
+        first = enable_mfa(self.user["user_id"], code)
+        self.assertEqual(len(first), 8)
+        db = session()
+        try:
+            before = {
+                token.token_hash for token in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "MFA_RECOVERY",
+                ).all()
+            }
+        finally:
+            db.close()
+        self.assertEqual(len(before), 8)
+        self.assertIsNone(enable_mfa(self.user["user_id"], code))
+        db = session()
+        try:
+            after = {
+                token.token_hash for token in db.query(AuthToken).filter(
+                    AuthToken.user_id == self.user["user_id"],
+                    AuthToken.token_type == "MFA_RECOVERY",
+                ).all()
+            }
+        finally:
+            db.close()
+        self.assertEqual(after, before)
+
+    def test_stale_mfa_setup_cannot_activate_replaced_secret(self):
+        from crownpath.auth import enable_mfa, get_user_by_id
+        self.login_without_mfa()
+        first = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(first.status_code, 200, first.text)
+        first_secret = first.json()["secret"]
+        second = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(second.status_code, 200, second.text)
+        second_secret = second.json()["secret"]
+        self.assertNotEqual(first_secret, second_secret)
+        self.assertIsNone(enable_mfa(self.user["user_id"], pyotp.TOTP(first_secret).now()))
+        self.assertFalse(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        codes = enable_mfa(self.user["user_id"], pyotp.TOTP(second_secret).now())
+        self.assertEqual(len(codes), 8)
+        self.assertTrue(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        self.assertIsNone(enable_mfa(self.user["user_id"], pyotp.TOTP(first_secret).now()))
+
+    def test_mfa_session_creation_failure_preserves_enrollment(self):
+        from unittest.mock import patch
+        from crownpath.auth import get_user_by_id
+        self.login_without_mfa()
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        enrollment_cookie = self.client.cookies.get("crownpath_session")
+        code = pyotp.TOTP(setup.json()["secret"]).now()
+        with patch("crownpath.main.create_access_token", side_effect=RuntimeError("simulated session failure")):
+            with self.assertRaisesRegex(RuntimeError, "simulated session failure"):
+                self.client.post("/api/auth/mfa/enable", json={"code": code})
+        self.assertTrue(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        self.assertEqual(self.client.cookies.get("crownpath_session"), enrollment_cookie)
+        self.assertEqual(self.client.get("/api/auth/me").status_code, 401)
+        self.client.cookies.clear()
+        login = self.client.post("/api/auth/login", json={"email": self.email, "password": self.password})
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertTrue(login.json()["mfa_required"])
+        verified = self.client.post("/api/auth/mfa/verify", json={
+            "challenge": login.json()["challenge"], "code": pyotp.TOTP(setup.json()["secret"]).now(),
+        })
+        self.assertEqual(verified.status_code, 200, verified.text)
+        self.assertTrue(verified.json()["authenticated"])
+
+    def test_recovery_token_write_failure_rolls_back_mfa_activation(self):
+        from unittest.mock import patch
+        from sqlalchemy.orm import Session as SqlAlchemySession
+        from crownpath.auth import enable_mfa, get_user_by_id
+        setup_login = self.login_without_mfa()
+        self.assertEqual(setup_login.status_code, 200)
+        setup = self.client.post("/api/auth/mfa/setup")
+        self.assertEqual(setup.status_code, 200, setup.text)
+        secret = setup.json()["secret"]
+        original_commit = SqlAlchemySession.commit
+
+        def fail_recovery_commit(db):
+            if any(isinstance(item, AuthToken) and item.token_type == "MFA_RECOVERY"
+                   for item in db.new):
+                raise RuntimeError("simulated recovery-token persistence failure")
+            return original_commit(db)
+
+        with patch.object(SqlAlchemySession, "commit", fail_recovery_commit):
+            with self.assertRaisesRegex(RuntimeError, "simulated recovery-token"):
+                enable_mfa(self.user["user_id"], pyotp.TOTP(secret).now())
+        self.assertFalse(get_user_by_id(self.user["user_id"])["mfa_enabled"])
+        db = session()
+        try:
+            recovery_count = db.query(AuthToken).filter(
+                AuthToken.user_id == self.user["user_id"],
+                AuthToken.token_type == "MFA_RECOVERY",
+            ).count()
+            self.assertEqual(recovery_count, 0)
+        finally:
+            db.close()
 
     def test_invalid_enable_code_does_not_enable_mfa(self):
         self.login_without_mfa()
