@@ -539,17 +539,31 @@ def enable_mfa(user_id: str, code: str):
     secret = user.get("mfa_secret") if user else None
     if not secret or not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
         return None
+    codes = [f"{secrets.randbelow(100_000_000):08d}" for _ in range(MFA_RECOVERY_CODE_COUNT)]
     db = session()
     try:
         row = db.get(User, user_id)
-        if not row:
+        if not row or row.mfa_enabled or row.mfa_secret != secret:
             return None
+        db.execute(delete(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "MFA_RECOVERY"))
+        expires_at = now_utc() + timedelta(days=MFA_RECOVERY_DAYS)
+        for recovery_code in codes:
+            db.add(AuthToken(
+                token_id=f"CP-TOK-{uuid.uuid4().hex[:12].upper()}",
+                user_id=user_id,
+                token_hash=_hash_mfa_recovery_code(user_id, recovery_code),
+                token_type="MFA_RECOVERY",
+                expires_at=expires_at,
+                created_at=now_utc(),
+            ))
         row.mfa_enabled = True
         db.commit()
+        return codes
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
-    return generate_mfa_recovery_codes(user_id)
-
 
 def mark_email_verified(user_id: str):
     db = session()
