@@ -164,6 +164,29 @@ class MfaIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_verified_owner_session_rejected_after_logout(self):
+        from unittest.mock import patch
+        from crownpath.auth import decode_access_token, session_mfa_verified
+        db = session()
+        try:
+            owner = db.get(User, self.user["user_id"])
+            owner.role = "OWNER"
+            owner.track = "OWNER"
+            db.commit()
+        finally:
+            db.close()
+        with patch.dict(os.environ, {"CROWNPATH_OWNER_ONLY": "true"}):
+            self.enable_mfa()
+            token = self.client.cookies.get("crownpath_session")
+            self.assertTrue(session_mfa_verified(token))
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 200)
+            logged_out = self.client.post("/api/auth/logout")
+            self.assertEqual(logged_out.status_code, 200, logged_out.text)
+            self.assertIsNone(decode_access_token(token))
+            self.assertFalse(session_mfa_verified(token))
+            self.client.cookies.set("crownpath_session", token)
+            self.assertEqual(self.client.get("/api/audio/stations").status_code, 401)
+
     def test_mfa_setup_requires_authentication(self):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
