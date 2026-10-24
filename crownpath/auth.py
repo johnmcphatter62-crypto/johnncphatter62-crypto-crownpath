@@ -542,8 +542,19 @@ def enable_mfa(user_id: str, code: str):
     codes = [f"{secrets.randbelow(100_000_000):08d}" for _ in range(MFA_RECOVERY_CODE_COUNT)]
     db = session()
     try:
-        row = db.get(User, user_id)
-        if not row or row.mfa_enabled or row.mfa_secret != secret:
+        # Claim the pending enrollment with an atomic conditional update.
+        # Only one concurrent confirmation can change disabled -> enabled.
+        claim = db.execute(
+            update(User)
+            .where(
+                User.user_id == user_id,
+                User.mfa_enabled.is_(False),
+                User.mfa_secret == secret,
+            )
+            .values(mfa_enabled=True)
+        )
+        if claim.rowcount != 1:
+            db.rollback()
             return None
         db.execute(delete(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "MFA_RECOVERY"))
         expires_at = now_utc() + timedelta(days=MFA_RECOVERY_DAYS)
@@ -556,7 +567,6 @@ def enable_mfa(user_id: str, code: str):
                 expires_at=expires_at,
                 created_at=now_utc(),
             ))
-        row.mfa_enabled = True
         db.commit()
         return codes
     except Exception:
