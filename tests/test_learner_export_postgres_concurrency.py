@@ -8,10 +8,16 @@ import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from urllib.parse import urlsplit
 
 test_url = os.environ.get("CROWNPATH_TEST_POSTGRES_URL", "")
 if not test_url.startswith(("postgresql://", "postgresql+psycopg://")):
     raise unittest.SkipTest("Explicit isolated PostgreSQL URL required")
+# Refuse even an explicitly flagged database unless its name clearly denotes a
+# disposable test database. Never log the connection URL (it may contain secrets).
+db_name = urlsplit(test_url).path.lstrip("/").lower()
+if not db_name or not any(tag in db_name for tag in ("disposable", "crownpath_test", "test_crownpath")):
+    raise unittest.SkipTest("Database name must clearly identify an isolated test database")
 if os.environ.get("CROWNPATH_DATABASE_URL") != test_url:
     raise unittest.SkipTest("Configured database URL must exactly match test URL")
 if os.environ.get("CROWNPATH_ENV", "").lower() != "staging":
