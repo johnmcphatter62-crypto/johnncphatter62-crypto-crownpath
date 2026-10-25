@@ -21,7 +21,7 @@ Status: DRAFT / evidence required. This document is a review checklist, **not** 
 | Payment integrity | Verify payment provider account ownership, authorized payout destination, webhook validation, and audit trail | OPEN |
 | Auditability | Verify immutable/append-only audit evidence for privileged access and sensitive data changes | OPEN |
 | Vendor agreements | Review service contracts, subprocessors, exit terms, and domain/hosting account recovery | OPEN |
-| Release safety | Complete isolated PostgreSQL MFA concurrency test and final independent security review | OPEN: learner-export PostgreSQL concurrency passed CI #525; separate MFA concurrency test and independent review not yet verified |
+| Release safety | Complete isolated PostgreSQL MFA concurrency test and final independent security review | PARTIAL: MFA single-winner and learner-export PostgreSQL concurrency passed CI #529; independent security review and remaining release checks OPEN |
 
 ## Release decision
 Keep PR #46 in draft and production unchanged until the gates have evidence and explicit authorized approval. A successful CI workflow is not proof of production data ownership or portability.
@@ -35,3 +35,8 @@ Keep PR #46 in draft and production unchanged until the gates have evidence and 
 - GitHub Actions CI #525: https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/40174566518
 - Disposable localhost PostgreSQL 16 integration tests: four passed; includes ten concurrent requests, independent learner quotas, expired quota handling, and audit failure behavior.
 - The learner-export quota verification is complete for these synthetic scenarios. Do not interpret this as proof of production deployment, comprehensive portability, cross-process stress testing, or MFA concurrency acceptance.
+
+## Owner MFA PostgreSQL evidence update — 2026-10-25
+- GitHub Actions CI #529: https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/40175149642
+- Disposable localhost PostgreSQL test `test_two_confirmations_single_winner` passed; four learner-export integration tests also passed in the same job, without skips.
+- This verifies the synthetic two-request MFA confirmation race, not all MFA threats or the real Owner login. Independent security review and production access validation remain open.
