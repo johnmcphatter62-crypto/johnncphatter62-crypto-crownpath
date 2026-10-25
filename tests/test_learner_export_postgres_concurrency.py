@@ -67,6 +67,11 @@ class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
                     self.assertEqual(payload["profile"]["user_id"], user_id)
                     self.assertNotIn("password_hash", str(payload))
                     self.assertNotIn("mfa_secret", str(payload))
+                else:
+                    self.assertEqual(status, 429)
+                    self.assertNotIn("profile", payload)
+                    self.assertNotIn("learning_progress", payload)
+                    self.assertNotIn("lesson_steps", payload)
             db = session()
             try:
                 events = db.scalars(select(AuditEvent).where(
