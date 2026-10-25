@@ -14,7 +14,10 @@ def authorize_and_consume_payment_proof(
 ):
     """Consume only when all trusted preconditions are explicitly true."""
     if not (
-        can_configure_payments(user, recent_mfa_verified=True)
+        isinstance(user, dict)
+        and isinstance(user.get("user_id"), str)
+        and bool(user["user_id"].strip())
+        and can_configure_payments(user, recent_mfa_verified=True)
         and isinstance(session_id, str)
         and bool(session_id.strip())
         and isinstance(proof_token, str)
