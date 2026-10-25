@@ -45,7 +45,7 @@ class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
         from unittest.mock import patch
         from sqlalchemy.orm import Session
         init_db()
-        email = f"synthetic-audit-failure-{uuid.uuid4().hex}@example.invalid"
+        email = f"synthetic-audit-failure-{uuid.uuid4().hex}@example.com"
         password = "Synthetic-Export-Only-2026!"
         user = create_user("Synthetic Audit Failure", email, password, "HOME_CARE")
         user_id = user["user_id"]
@@ -83,7 +83,7 @@ class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
     def test_expired_success_events_do_not_consume_hourly_quota(self):
         from datetime import datetime, timedelta, timezone
         init_db()
-        email = f"synthetic-expiry-{uuid.uuid4().hex}@example.invalid"
+        email = f"synthetic-expiry-{uuid.uuid4().hex}@example.com"
         password = "Synthetic-Export-Only-2026!"
         user = create_user("Synthetic Expiry Learner", email, password, "HOME_CARE")
         user_id = user["user_id"]
@@ -127,7 +127,7 @@ class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
         users = []
         try:
             for _ in range(2):
-                email = f"synthetic-independent-{uuid.uuid4().hex}@example.invalid"
+                email = f"synthetic-independent-{uuid.uuid4().hex}@example.com"
                 password = "Synthetic-Export-Only-2026!"
                 user = create_user("Synthetic Independent Learner", email, password, "HOME_CARE")
                 users.append(user["user_id"])
@@ -167,7 +167,7 @@ class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
 
     def test_ten_simultaneous_requests_only_five_succeed(self):
         init_db()
-        email = f"synthetic-export-{uuid.uuid4().hex}@example.invalid"
+        email = f"synthetic-export-{uuid.uuid4().hex}@example.com"
         password = "Synthetic-Export-Only-2026!"
         user = create_user("Synthetic Export Race", email, password, "HOME_CARE")
         user_id = user["user_id"]
