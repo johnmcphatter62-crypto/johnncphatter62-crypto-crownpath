@@ -9,6 +9,7 @@ This test creates and deletes its own synthetic user. Never point it at producti
 import os
 import unittest
 import uuid
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -23,6 +24,11 @@ if os.environ.get("CROWNPATH_ENV", "").lower() != "staging":
     raise unittest.SkipTest("Only staging environment is permitted")
 if os.environ.get("CROWNPATH_TEST_DB_DISPOSABLE") != "YES":
     raise unittest.SkipTest("Set CROWNPATH_TEST_DB_DISPOSABLE=YES after confirming isolation")
+parsed = urlparse(test_url)
+if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+    raise unittest.SkipTest("Only localhost PostgreSQL is permitted")
+if not any(tag in (parsed.path or "").lower() for tag in ("disposable", "crownpath_test", "test_crownpath")):
+    raise unittest.SkipTest("Database name must clearly identify a disposable test database")
 
 import pyotp
 from sqlalchemy import delete, select
@@ -35,7 +41,7 @@ from crownpath.models import AuthToken, User
 class PostgresMfaConcurrencyTest(unittest.TestCase):
     def test_two_confirmations_single_winner(self):
         init_db()
-        email = f"synthetic-mfa-{uuid.uuid4().hex}@example.invalid"
+        email = f"synthetic-mfa-{uuid.uuid4().hex}@example.com"
         user = create_user("Synthetic MFA Race", email, "Disposable-Test-Only-2026!", "HOME_CARE")
         user_id = user["user_id"]
         try:
