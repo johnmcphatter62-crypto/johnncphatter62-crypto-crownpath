@@ -11,7 +11,11 @@ def may_issue_payment_proof(
 ):
     """Deny unless owner permission, server MFA, session, and CSRF all pass."""
     return bool(
-        session_id
+        isinstance(user, dict)
+        and isinstance(user.get("user_id"), str)
+        and bool(user["user_id"].strip())
+        and isinstance(session_id, str)
+        and bool(session_id.strip())
         and csrf_verified is True
         and server_verified_mfa is True
         and can_configure_payments(user, recent_mfa_verified=True)
