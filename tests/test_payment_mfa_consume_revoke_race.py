@@ -13,7 +13,7 @@ from crownpath.payment_mfa_db_proof import (
 
 
 def test_consume_racing_revoke_has_single_terminal_state(tmp_path):
-    engine = sa.create_engine(f"sqlite:///{tmp_path / 'race.db'}", timeout=20)
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'race.db'}", connect_args={"timeout": 20})
     try:
         create_test_schema(engine)
         token = issue_verified_proof(engine, user_id="owner", session_id="s1", now=100)
