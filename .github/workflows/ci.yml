@@ -43,6 +43,8 @@ jobs:
           pip install pytest httpx
       - name: Run synthetic payment policy tests
         run: python -m unittest -v tests.test_payment_policy
+      - name: Run disposable payment transaction tests
+        run: python -m unittest -v tests.test_synthetic_payment_ledger
       - name: Compile Python
         run: python -m compileall crownpath api
       - name: Run tests
