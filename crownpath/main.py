@@ -290,6 +290,14 @@ def learner_my_data_export(user=Depends(require_permission("academy.view"))):
         progress=db.scalars(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"]).order_by(LearnerProgress.lesson_id).limit(export_limit+1)).all()
         steps=db.scalars(select(LearnerLessonStep).where(LearnerLessonStep.user_id==user["user_id"]).order_by(LearnerLessonStep.lesson_id,LearnerLessonStep.step_index).limit(export_limit+1)).all()
         if len(progress)>export_limit or len(steps)>export_limit:
+            # Audit rejected exports without persisting learner content or raw request details.
+            db.add(AuditEvent(
+                user_id=user["user_id"], action="learner.self_export",
+                category="DATA_ACCESS", resource_type="LEARNER_RECORDS",
+                resource_id=user["user_id"], result="REJECTED",
+                reason="record_limit_exceeded",
+            ))
+            db.commit()
             raise HTTPException(413,"Export exceeds the supported record limit. Contact support for a secure larger export.")
         # Record metadata only: never store exported profile, lesson content, or credentials in audit logs.
         db.add(AuditEvent(
