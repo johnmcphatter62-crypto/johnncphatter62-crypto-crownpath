@@ -2,7 +2,7 @@
 import pytest
 from crownpath.payment_mfa_issue_policy import may_issue_payment_proof
 
-OWNER = {"role": "OWNER", "active": True, "mfa_enabled": True}
+OWNER = {"user_id": "owner", "role": "OWNER", "active": True, "mfa_enabled": True}
 
 def test_all_trusted_conditions_required():
     assert may_issue_payment_proof(OWNER, server_verified_mfa=True, session_id="trusted-session", csrf_verified=True)
