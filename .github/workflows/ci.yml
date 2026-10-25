@@ -123,3 +123,45 @@ jobs:
         run: python -m compileall crownpath api
       - name: Run tests
         run: python -m pytest -q tests/test_postgres_curriculum_migration_integration.py
+
+  learner-export-postgres-concurrency:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: crownpath_test
+          POSTGRES_PASSWORD: local_disposable_ci_only
+          POSTGRES_DB: crownpath_test_disposable
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U crownpath_test -d crownpath_test_disposable"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      CROWNPATH_ENV: staging
+      CROWNPATH_SECRET_KEY: ci-only-secret-key-for-crownpath-tests-2026
+      CROWNPATH_LEARNER_ACCESS_APPROVED: 'true'
+      CROWNPATH_LEARNER_ENROLLMENT_APPROVED: 'true'
+      CROWNPATH_INSTRUCTOR_ACCESS_APPROVED: 'false'
+      CROWNPATH_OWNER_LAUNCH_APPROVED: 'false'
+      CROWNPATH_TEST_DB_DISPOSABLE: 'YES'
+      CROWNPATH_DATABASE_URL: postgresql+psycopg://crownpath_test:local_disposable_ci_only@localhost:5432/crownpath_test_disposable
+      CROWNPATH_TEST_POSTGRES_URL: postgresql+psycopg://crownpath_test:local_disposable_ci_only@localhost:5432/crownpath_test_disposable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+      - name: Run isolated PostgreSQL export tests (must not skip)
+        run: |
+          python -m unittest -v tests.test_learner_export_postgres_concurrency 2>&1 | tee postgres-export-test.log
+          ! grep -E '(^|[[:space:]])skipped[[:space:]]+[1-9]|^OK \(skipped=' postgres-export-test.log
