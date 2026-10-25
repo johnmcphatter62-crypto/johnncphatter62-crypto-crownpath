@@ -18,6 +18,11 @@ if not test_url.startswith(("postgresql://", "postgresql+psycopg://")):
 db_name = urlsplit(test_url).path.lstrip("/").lower()
 if not db_name or not any(tag in db_name for tag in ("disposable", "crownpath_test", "test_crownpath")):
     raise unittest.SkipTest("Database name must clearly identify an isolated test database")
+# Keep the integration test on a local disposable PostgreSQL instance.
+# Hostname restrictions are defense in depth, not proof of database isolation.
+db_host = (urlsplit(test_url).hostname or "").lower()
+if db_host not in ("localhost", "127.0.0.1", "::1"):
+    raise unittest.SkipTest("Only a local disposable PostgreSQL server is permitted")
 if os.environ.get("CROWNPATH_DATABASE_URL") != test_url:
     raise unittest.SkipTest("Configured database URL must exactly match test URL")
 if os.environ.get("CROWNPATH_ENV", "").lower() != "staging":
