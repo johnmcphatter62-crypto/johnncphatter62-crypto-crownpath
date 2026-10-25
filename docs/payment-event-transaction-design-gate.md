@@ -34,3 +34,10 @@ Status: DESIGN ONLY. No production payment implementation, provider integration,
 CI #546 confirmed five tests of the provider-neutral in-memory policy rules. Those tests **do not** establish persisted idempotency, actual cryptographic webhook verification, or payment readiness.
 
 Related: `docs/payment-integrity-learner-privacy-review-gate.md` and `docs/payment-integration-source-discovery.md`.
+
+## Disposable SQLite test evidence — CI #551 (2026-10-25)
+- GitHub Actions https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/40204735771 completed successfully across all four jobs.
+- `tests.test_synthetic_payment_ledger` ran **5 tests, all passed** in the Owner-access job, covering same-event deduplication, distinct-event rejection after payment, invalid event rejection, unknown-order rollback, and entitlement-write rollback.
+- The existing provider-neutral payment-policy suite also ran **5 tests, all passed**.
+- The helper uses **disposable in-memory SQLite**, not CrownPath's production database or a deployed payment endpoint. Its `verified` fixture flag is not cryptographic webhook validation; its event uniqueness is not yet proven under concurrent multi-process delivery or PostgreSQL.
+- Paid enrollment, provider integration, production migration, and payout changes remain BLOCKED.
