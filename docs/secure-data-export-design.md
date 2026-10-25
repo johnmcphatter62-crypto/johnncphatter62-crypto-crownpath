@@ -1,6 +1,6 @@
 # CrownPath — Secure Data Export Design (Review Only)
 
-Status: **PROPOSED, NOT IMPLEMENTED**. No production data accessed or exported.
+Status: **PARTIAL IMPLEMENTATION ON DRAFT PR #46**. Learner self-export has been implemented and tested with synthetic data. Owner-wide archives and subject-request workflows remain proposed. No production data accessed or exported.
 
 ## Scope
 Provide authorized, portable exports of CrownPath-controlled business and education records while honoring student and instructor privacy rights. Do not confuse a business-wide archive with a learner's own records request.
