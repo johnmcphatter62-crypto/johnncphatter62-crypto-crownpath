@@ -279,6 +279,37 @@ def me(request:Request,user=Depends(current_user)):
     data["mfa_verification_required"] = owner_needs_mfa
     return data
 
+@app.get("/api/learner/my-data-export")
+def learner_my_data_export(user=Depends(require_permission("academy.view"))):
+    """Authenticated learner-only JSON export; never serialize authentication fields."""
+    require_learner(user)
+    db=session()
+    try:
+        progress=db.scalars(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"]).order_by(LearnerProgress.lesson_id)).all()
+        steps=db.scalars(select(LearnerLessonStep).where(LearnerLessonStep.user_id==user["user_id"]).order_by(LearnerLessonStep.lesson_id,LearnerLessonStep.step_index)).all()
+        def iso(value):
+            return value.isoformat() if value is not None else None
+        return {
+            "format":"crownpath-learner-export-v1",
+            "profile":{
+                "user_id":user["user_id"],"name":user["name"],"email":user["email"],
+                "track":user["track"],"created_at":iso(user["created_at"]),
+            },
+            "learning_progress":[{
+                "lesson_id":item.lesson_id,"status":item.status,
+                "progress_percent":item.progress_percent,
+                "opened_at":iso(item.opened_at),"completed_at":iso(item.completed_at),
+                "updated_at":iso(item.updated_at),
+            } for item in progress],
+            "lesson_steps":[{
+                "lesson_id":item.lesson_id,"step_index":item.step_index,
+                "completed":item.completed,"completed_at":iso(item.completed_at),
+                "updated_at":iso(item.updated_at),
+            } for item in steps],
+        }
+    finally:
+        db.close()
+
 @app.get("/api/learner/dashboard")
 def learner_dashboard(user=Depends(require_permission("academy.view"))):
     role=require_learner(user)
