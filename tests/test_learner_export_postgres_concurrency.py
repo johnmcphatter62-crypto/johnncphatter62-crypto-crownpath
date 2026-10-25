@@ -36,6 +36,49 @@ from crownpath.models import AuditEvent, AuthToken, LearnerLessonStep, LearnerPr
 
 
 class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
+    def test_separate_learners_have_independent_quotas(self):
+        init_db()
+        users = []
+        try:
+            for _ in range(2):
+                email = f"synthetic-independent-{uuid.uuid4().hex}@example.invalid"
+                password = "Synthetic-Export-Only-2026!"
+                user = create_user("Synthetic Independent Learner", email, password, "HOME_CARE")
+                users.append(user["user_id"])
+                with TestClient(app) as client:
+                    login = client.post("/api/auth/login", json={
+                        "email": email, "password": password,
+                    })
+                    self.assertEqual(login.status_code, 200, login.text)
+                    for attempt in range(6):
+                        response = client.get("/api/learner/my-data-export")
+                        self.assertEqual(response.status_code, 200 if attempt < 5 else 429, response.text)
+                        if attempt < 5:
+                            self.assertEqual(response.json()["profile"]["user_id"], user["user_id"])
+            db = session()
+            try:
+                for user_id in users:
+                    events = db.scalars(select(AuditEvent).where(
+                        AuditEvent.user_id == user_id,
+                        AuditEvent.action == "learner.self_export",
+                    )).all()
+                    self.assertEqual(sum(e.result == "SUCCESS" for e in events), 5)
+                    self.assertEqual(sum(e.result == "REJECTED" for e in events), 1)
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                for user_id in users:
+                    db.execute(delete(AuditEvent).where(AuditEvent.user_id == user_id))
+                    db.execute(delete(LearnerLessonStep).where(LearnerLessonStep.user_id == user_id))
+                    db.execute(delete(LearnerProgress).where(LearnerProgress.user_id == user_id))
+                    db.execute(delete(AuthToken).where(AuthToken.user_id == user_id))
+                    db.execute(delete(User).where(User.user_id == user_id))
+                db.commit()
+            finally:
+                db.close()
+
     def test_ten_simultaneous_requests_only_five_succeed(self):
         init_db()
         email = f"synthetic-export-{uuid.uuid4().hex}@example.invalid"
