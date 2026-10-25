@@ -37,3 +37,10 @@ Status: SOURCE-REVIEW CHECKLIST ONLY. No payment processor account, production p
 Related synthetic CI evidence: https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/40176358041
 
 PR #46 must remain draft. No production payment activation or deployment is authorized by this document.
+
+## Synthetic policy test evidence — CI #546 (2026-10-25)
+- GitHub Actions run https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/40177346589 completed successfully across all four jobs.
+- The `owner-access` job explicitly executed `python -m unittest -v tests.test_payment_policy`: **5 tests passed, no skips**.
+- Covered synthetic price/currency/order tampering, unverified event rejection, invalid or repeated transitions, duplicate event handling, and HTTPS return-origin allowlisting.
+- These tests exercise the pure `crownpath/payment_policy.py` helper only. The `signature_verified` flag is an input supplied by a hypothetical future verified provider adapter; **there is no cryptographic signature verification or durable cross-process event idempotency in this helper**.
+- Payment processor selection, real checkout, webhook integration, persisted orders, payment reconciliation, and paid enrollment remain BLOCKED.
