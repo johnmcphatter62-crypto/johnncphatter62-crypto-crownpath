@@ -285,9 +285,13 @@ def learner_my_data_export(user=Depends(require_permission("academy.view"))):
     require_learner(user)
     db=session()
     try:
-        # Conservative per-account limit using durable audit records.
-        # This is not an atomic distributed rate limiter; a future release gate must
-        # verify concurrency behavior and consider an external atomic limiter.
+        # PostgreSQL row lock serializes export quota checks for this account
+        # across workers until the audit event is committed. SQLite does not
+        # support SELECT FOR UPDATE: isolated PostgreSQL concurrency verification
+        # remains a release gate.
+        account=db.scalar(select(User).where(User.user_id==user["user_id"]).with_for_update())
+        if account is None or not account.active:
+            raise HTTPException(401,"Authentication required.")
         window_start=datetime.now(timezone.utc)-timedelta(hours=1)
         recent_exports=db.scalars(
             select(AuditEvent).where(
