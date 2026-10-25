@@ -128,7 +128,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_USER: crownpath_test
           POSTGRES_PASSWORD: local_disposable_ci_only
