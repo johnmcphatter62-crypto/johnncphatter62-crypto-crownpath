@@ -175,6 +175,11 @@ jobs:
           set -o pipefail
           python -m unittest -v tests.test_mfa_postgres_concurrency 2>&1 | tee postgres-mfa-test.log
           ! grep -E '(^|[[:space:]])skipped[[:space:]]+[1-9]|^OK \(skipped=' postgres-mfa-test.log
+      - name: Run disposable PostgreSQL payment concurrency test (must not skip)
+        run: |
+          set -o pipefail
+          python -m unittest -v tests.test_payment_postgres_concurrency 2>&1 | tee postgres-payment-test.log
+          ! grep -E '(^|[[:space:]])skipped[[:space:]]+[1-9]|^OK \\(skipped=' postgres-payment-test.log
       - name: Run isolated PostgreSQL export tests (must not skip)
         run: |
           set -o pipefail
