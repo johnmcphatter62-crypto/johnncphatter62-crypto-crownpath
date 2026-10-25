@@ -36,6 +36,45 @@ from crownpath.models import AuditEvent, AuthToken, LearnerLessonStep, LearnerPr
 
 
 class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
+    def test_export_fails_closed_if_audit_commit_fails(self):
+        from unittest.mock import patch
+        from sqlalchemy.orm import Session
+        init_db()
+        email = f"synthetic-audit-failure-{uuid.uuid4().hex}@example.invalid"
+        password = "Synthetic-Export-Only-2026!"
+        user = create_user("Synthetic Audit Failure", email, password, "HOME_CARE")
+        user_id = user["user_id"]
+        try:
+            with TestClient(app, raise_server_exceptions=False) as client:
+                login = client.post("/api/auth/login", json={
+                    "email": email, "password": password,
+                })
+                self.assertEqual(login.status_code, 200, login.text)
+                with patch.object(Session, "commit", side_effect=RuntimeError("synthetic audit write failure")):
+                    response = client.get("/api/learner/my-data-export")
+                self.assertGreaterEqual(response.status_code, 500)
+                self.assertNotIn("profile", response.text)
+                self.assertNotIn("learning_progress", response.text)
+                self.assertNotIn("lesson_steps", response.text)
+            db = session()
+            try:
+                events = db.scalars(select(AuditEvent).where(
+                    AuditEvent.user_id == user_id,
+                    AuditEvent.action == "learner.self_export",
+                )).all()
+                self.assertEqual(events, [])
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuditEvent).where(AuditEvent.user_id == user_id))
+                db.execute(delete(AuthToken).where(AuthToken.user_id == user_id))
+                db.execute(delete(User).where(User.user_id == user_id))
+                db.commit()
+            finally:
+                db.close()
+
     def test_expired_success_events_do_not_consume_hourly_quota(self):
         from datetime import datetime, timedelta, timezone
         init_db()
