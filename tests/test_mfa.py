@@ -327,6 +327,43 @@ class MfaIntegrationTest(unittest.TestCase):
         finally:
             db.close()
 
+    def test_learner_export_rejects_oversized_progress_without_success_audit(self):
+        from crownpath.models import LearnerProgress
+        db = session()
+        try:
+            db.add_all([
+                LearnerProgress(
+                    progress_id=f"CP-PR-{uuid.uuid4().hex[:12]}",
+                    user_id=self.user["user_id"],
+                    lesson_id=f"export-cap-{i}-{uuid.uuid4().hex[:6]}",
+                    status="NOT_STARTED", progress_percent=0,
+                ) for i in range(1001)
+            ])
+            db.commit()
+        finally:
+            db.close()
+        try:
+            self.login_without_mfa()
+            response = self.client.get("/api/learner/my-data-export")
+            self.assertEqual(response.status_code, 413, response.text)
+            db = session()
+            try:
+                success = db.query(AuditEvent).filter(
+                    AuditEvent.user_id == self.user["user_id"],
+                    AuditEvent.action == "learner.self_export",
+                    AuditEvent.result == "SUCCESS",
+                ).count()
+                self.assertEqual(success, 0)
+            finally:
+                db.close()
+        finally:
+            db = session()
+            try:
+                db.execute(delete(LearnerProgress).where(LearnerProgress.user_id == self.user["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
     def test_learner_export_requires_authentication(self):
         response = self.client.get("/api/learner/my-data-export")
         self.assertEqual(response.status_code, 401)
