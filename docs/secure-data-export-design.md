@@ -42,5 +42,12 @@ password_hash, mfa_secret, auth_tokens (including session and recovery hashes), 
 ```
 The example is a format specification, not a generated export.
 
+## Verified learner export evidence
+- Draft endpoint: `GET /api/learner/my-data-export`, authenticated learner only, server-side learner ID filtering and explicit field allowlists.
+- Audited SUCCESS and REJECTED events, 1,000-record caps per collection, and five successful exports per rolling hour.
+- CI #529 verified four synthetic learner-export PostgreSQL tests, including ten concurrent requests, and one separate MFA concurrency test. Evidence: https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/40175149642
+- Direct JSON response only: no generated archive, encrypted temporary artifact, or checksum manifest implemented for learner self-export.
+- These tests do not verify organization-wide archives, retention policy, infrastructure throttling, or production data custody.
+
 ## Release gate
 No production export endpoint should be enabled until privacy, security, and legal review is complete and tests demonstrate strict row/field isolation, authentication, auditing, and artifact cleanup.
