@@ -354,6 +354,13 @@ class MfaIntegrationTest(unittest.TestCase):
                     AuditEvent.result == "SUCCESS",
                 ).count()
                 self.assertEqual(success, 0)
+                rejected = db.query(AuditEvent).filter(
+                    AuditEvent.user_id == self.user["user_id"],
+                    AuditEvent.action == "learner.self_export",
+                    AuditEvent.result == "REJECTED",
+                ).all()
+                self.assertEqual(len(rejected), 1)
+                self.assertEqual(rejected[0].reason, "record_limit_exceeded")
             finally:
                 db.close()
         finally:
