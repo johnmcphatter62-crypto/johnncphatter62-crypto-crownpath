@@ -45,6 +45,8 @@ jobs:
         run: python -m unittest -v tests.test_payment_policy
       - name: Run disposable payment transaction tests
         run: python -m unittest -v tests.test_synthetic_payment_ledger
+      - name: Test disposable payment PostgreSQL permission gate
+        run: python -m unittest -v tests.test_payment_postgres_permission_gate
       - name: Compile Python
         run: python -m compileall crownpath api
       - name: Run tests
