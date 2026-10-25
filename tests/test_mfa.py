@@ -371,6 +371,26 @@ class MfaIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_learner_export_rate_limit_and_rejection_audit(self):
+        self.login_without_mfa()
+        for _ in range(5):
+            response = self.client.get("/api/learner/my-data-export")
+            self.assertEqual(response.status_code, 200, response.text)
+        response = self.client.get("/api/learner/my-data-export")
+        self.assertEqual(response.status_code, 429, response.text)
+        db = session()
+        try:
+            events = db.query(AuditEvent).filter(
+                AuditEvent.user_id == self.user["user_id"],
+                AuditEvent.action == "learner.self_export",
+            ).all()
+            self.assertEqual(sum(e.result == "SUCCESS" for e in events), 5)
+            rejected = [e for e in events if e.result == "REJECTED"]
+            self.assertEqual(len(rejected), 1)
+            self.assertEqual(rejected[0].reason, "hourly_export_limit_exceeded")
+        finally:
+            db.close()
+
     def test_learner_export_requires_authentication(self):
         response = self.client.get("/api/learner/my-data-export")
         self.assertEqual(response.status_code, 401)
