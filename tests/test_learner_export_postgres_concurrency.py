@@ -36,6 +36,48 @@ from crownpath.models import AuditEvent, AuthToken, LearnerLessonStep, LearnerPr
 
 
 class PostgresLearnerExportConcurrencyTest(unittest.TestCase):
+    def test_expired_success_events_do_not_consume_hourly_quota(self):
+        from datetime import datetime, timedelta, timezone
+        init_db()
+        email = f"synthetic-expiry-{uuid.uuid4().hex}@example.invalid"
+        password = "Synthetic-Export-Only-2026!"
+        user = create_user("Synthetic Expiry Learner", email, password, "HOME_CARE")
+        user_id = user["user_id"]
+        try:
+            db = session()
+            try:
+                for _ in range(5):
+                    db.add(AuditEvent(
+                        user_id=user_id,
+                        action="learner.self_export",
+                        category="DATA_ACCESS",
+                        resource_type="LEARNER_RECORDS",
+                        resource_id=user_id,
+                        result="SUCCESS",
+                        reason="synthetic_expired_quota",
+                        created_at=datetime.now(timezone.utc)-timedelta(hours=2),
+                    ))
+                db.commit()
+            finally:
+                db.close()
+            with TestClient(app) as client:
+                login = client.post("/api/auth/login", json={
+                    "email": email, "password": password,
+                })
+                self.assertEqual(login.status_code, 200, login.text)
+                response = client.get("/api/learner/my-data-export")
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["profile"]["user_id"], user_id)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuditEvent).where(AuditEvent.user_id == user_id))
+                db.execute(delete(AuthToken).where(AuthToken.user_id == user_id))
+                db.execute(delete(User).where(User.user_id == user_id))
+                db.commit()
+            finally:
+                db.close()
+
     def test_separate_learners_have_independent_quotas(self):
         init_db()
         users = []
