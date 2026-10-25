@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.responses import FileResponse
@@ -8,8 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
-from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
-from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
+from crownpath.models import AuditEvent, InstructorRequest, LearnerLessonStep, LearnerProgress, User
+from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code, session_mfa_verified
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
 from crownpath.startup_guard import validate_startup
@@ -109,7 +109,9 @@ def current_user(request:Request):
     return user
 
 def require_permission(permission:str):
-    def dependency(user=Depends(current_user)):
+    def dependency(request:Request,user=Depends(current_user)):
+        if user["role"] == "OWNER" and (not user["mfa_enabled"] or not session_mfa_verified(request.cookies.get("crownpath_session", ""))):
+            raise HTTPException(403,"Verified Owner MFA session is required before privileged access.")
         if not has_permission(user,permission): raise HTTPException(403,"Permission denied.")
         return user
     return dependency
@@ -235,7 +237,7 @@ def mfa_verify(payload:MfaVerifyRequest,response:Response):
     if not user or not user["active"] or not user["mfa_enabled"]: raise HTTPException(401,"MFA challenge is invalid or expired.")
     if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
     if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator or recovery code.")
-    token=create_access_token(user_id)
+    token=create_access_token(user_id, mfa_verified=True)
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(get_user_by_id(user_id))}
 
@@ -247,10 +249,14 @@ def mfa_setup(user=Depends(current_user)):
     return {"secret":secret,"provisioning_uri":uri,"message":"Add this account to your authenticator app, then enter the current 6-digit code to confirm."}
 
 @app.post("/api/auth/mfa/enable")
-def mfa_enable(payload:MfaEnableRequest,user=Depends(current_user)):
+def mfa_enable(payload:MfaEnableRequest,request:Request,response:Response,user=Depends(current_user)):
     if user["mfa_enabled"]: raise HTTPException(409,"Multi-factor authentication is already enabled.")
     recovery_codes=enable_mfa(user["user_id"],payload.code.strip())
     if not recovery_codes: raise HTTPException(400,"Authenticator code could not be verified.")
+    old_token=request.cookies.get("crownpath_session")
+    if old_token: revoke_access_token(old_token)
+    token=create_access_token(user["user_id"],mfa_verified=True)
+    response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"mfa_enabled":True,"recovery_codes":recovery_codes,"user":public_user(get_user_by_id(user["user_id"]))}
 
 @app.post("/api/auth/logout")
@@ -266,8 +272,88 @@ def logout(request:Request, response:Response):
     return {"authenticated":False}
 
 @app.get("/api/auth/me")
-def me(user=Depends(current_user)):
-    data=public_user(user); data["permissions"]=sorted(permissions_for_role(user["role"])); return data
+def me(request:Request,user=Depends(current_user)):
+    data=public_user(user)
+    owner_needs_mfa = user["role"] == "OWNER" and (not user["mfa_enabled"] or not session_mfa_verified(request.cookies.get("crownpath_session", "")))
+    data["permissions"] = [] if owner_needs_mfa else sorted(permissions_for_role(user["role"]))
+    data["mfa_verification_required"] = owner_needs_mfa
+    return data
+
+@app.get("/api/learner/my-data-export")
+def learner_my_data_export(user=Depends(require_permission("academy.view"))):
+    """Authenticated learner-only JSON export; never serialize authentication fields."""
+    require_learner(user)
+    db=session()
+    try:
+        # PostgreSQL row lock serializes export quota checks for this account
+        # across workers until the audit event is committed. SQLite does not
+        # support SELECT FOR UPDATE: isolated PostgreSQL concurrency verification
+        # remains a release gate.
+        account=db.scalar(select(User).where(User.user_id==user["user_id"]).with_for_update())
+        if account is None or not account.active:
+            raise HTTPException(401,"Authentication required.")
+        window_start=datetime.now(timezone.utc)-timedelta(hours=1)
+        recent_exports=db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.user_id==user["user_id"],
+                AuditEvent.action=="learner.self_export",
+                AuditEvent.result=="SUCCESS",
+                AuditEvent.created_at>=window_start,
+            ).limit(5)
+        ).all()
+        if len(recent_exports)>=5:
+            db.add(AuditEvent(
+                user_id=user["user_id"], action="learner.self_export",
+                category="DATA_ACCESS", resource_type="LEARNER_RECORDS",
+                resource_id=user["user_id"], result="REJECTED",
+                reason="hourly_export_limit_exceeded",
+            ))
+            db.commit()
+            raise HTTPException(429,"Too many exports. Please try again later.")
+        # Bound records fetched and reject oversized exports rather than returning truncated data.
+        export_limit=1000
+        progress=db.scalars(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"]).order_by(LearnerProgress.lesson_id).limit(export_limit+1)).all()
+        steps=db.scalars(select(LearnerLessonStep).where(LearnerLessonStep.user_id==user["user_id"]).order_by(LearnerLessonStep.lesson_id,LearnerLessonStep.step_index).limit(export_limit+1)).all()
+        if len(progress)>export_limit or len(steps)>export_limit:
+            # Audit rejected exports without persisting learner content or raw request details.
+            db.add(AuditEvent(
+                user_id=user["user_id"], action="learner.self_export",
+                category="DATA_ACCESS", resource_type="LEARNER_RECORDS",
+                resource_id=user["user_id"], result="REJECTED",
+                reason="record_limit_exceeded",
+            ))
+            db.commit()
+            raise HTTPException(413,"Export exceeds the supported record limit. Contact support for a secure larger export.")
+        # Record metadata only: never store exported profile, lesson content, or credentials in audit logs.
+        db.add(AuditEvent(
+            user_id=user["user_id"], action="learner.self_export",
+            category="DATA_ACCESS", resource_type="LEARNER_RECORDS",
+            resource_id=user["user_id"], result="SUCCESS",
+            reason=f"progress_count={len(progress)};step_count={len(steps)}",
+        ))
+        db.commit()
+        def iso(value):
+            return value.isoformat() if value is not None else None
+        return {
+            "format":"crownpath-learner-export-v1",
+            "profile":{
+                "user_id":user["user_id"],"name":user["name"],"email":user["email"],
+                "track":user["track"],"created_at":iso(user["created_at"]),
+            },
+            "learning_progress":[{
+                "lesson_id":item.lesson_id,"status":item.status,
+                "progress_percent":item.progress_percent,
+                "opened_at":iso(item.opened_at),"completed_at":iso(item.completed_at),
+                "updated_at":iso(item.updated_at),
+            } for item in progress],
+            "lesson_steps":[{
+                "lesson_id":item.lesson_id,"step_index":item.step_index,
+                "completed":item.completed,"completed_at":iso(item.completed_at),
+                "updated_at":iso(item.updated_at),
+            } for item in steps],
+        }
+    finally:
+        db.close()
 
 @app.get("/api/learner/dashboard")
 def learner_dashboard(user=Depends(require_permission("academy.view"))):

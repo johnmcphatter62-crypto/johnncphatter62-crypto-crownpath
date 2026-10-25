@@ -72,13 +72,14 @@ def _hash_session_id(session_id: str) -> str:
     return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, mfa_verified: bool = False) -> str:
     now = now_utc()
     expires_at = now + timedelta(minutes=ACCESS_TOKEN_MINUTES)
     session_id = secrets.token_urlsafe(24)
     payload = {
         "sub": user_id,
         "purpose": "session",
+        "mfa_verified": mfa_verified,
         "iat": now,
         "exp": expires_at,
         "jti": session_id,
@@ -130,6 +131,17 @@ def decode_access_token(token: str):
         return user_id
     except InvalidTokenError:
         return None
+
+
+def session_mfa_verified(token: str) -> bool:
+    """Require a live server-tracked session with explicit MFA assurance."""
+    if not decode_access_token(token):
+        return False
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("mfa_verified") is True
+    except InvalidTokenError:
+        return False
 
 
 def revoke_access_token(token: str) -> bool:
@@ -289,17 +301,9 @@ def create_owner(name: str, email: str, password: str, activation_code: str):
     try:
         existing = db.scalar(select(User).where(User.email == supplied_email))
         if existing:
-            existing.name = name.strip()
-            existing.password_hash = hash_password(password)
-            existing.role = "OWNER"
-            existing.track = "OWNER"
-            existing.active = True
-            existing.email_verified = True
-            existing.failed_login_attempts = 0
-            existing.locked_until = None
-            db.commit()
-            db.refresh(existing)
-            return _user_dict(existing)
+            # Activation is for a new Owner identity only. Never overwrite an
+            # existing account password or promote an account through this path.
+            raise ValueError("Existing account requires separately verified Owner provisioning.")
 
         user = User(
             user_id=f"CP-USR-{uuid.uuid4().hex[:12].upper()}",
@@ -535,17 +539,41 @@ def enable_mfa(user_id: str, code: str):
     secret = user.get("mfa_secret") if user else None
     if not secret or not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
         return None
+    codes = [f"{secrets.randbelow(100_000_000):08d}" for _ in range(MFA_RECOVERY_CODE_COUNT)]
     db = session()
     try:
-        row = db.get(User, user_id)
-        if not row:
+        # Claim the pending enrollment with an atomic conditional update.
+        # Only one concurrent confirmation can change disabled -> enabled.
+        claim = db.execute(
+            update(User)
+            .where(
+                User.user_id == user_id,
+                User.mfa_enabled.is_(False),
+                User.mfa_secret == secret,
+            )
+            .values(mfa_enabled=True)
+        )
+        if claim.rowcount != 1:
+            db.rollback()
             return None
-        row.mfa_enabled = True
+        db.execute(delete(AuthToken).where(AuthToken.user_id == user_id, AuthToken.token_type == "MFA_RECOVERY"))
+        expires_at = now_utc() + timedelta(days=MFA_RECOVERY_DAYS)
+        for recovery_code in codes:
+            db.add(AuthToken(
+                token_id=f"CP-TOK-{uuid.uuid4().hex[:12].upper()}",
+                user_id=user_id,
+                token_hash=_hash_mfa_recovery_code(user_id, recovery_code),
+                token_type="MFA_RECOVERY",
+                expires_at=expires_at,
+                created_at=now_utc(),
+            ))
         db.commit()
+        return codes
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
-    return generate_mfa_recovery_codes(user_id)
-
 
 def mark_email_verified(user_id: str):
     db = session()
