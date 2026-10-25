@@ -56,6 +56,7 @@ class PostgresSyntheticRestoreTest(unittest.TestCase):
                 password_hash="synthetic-hash-not-a-real-credential",
                 role="HOME_CARE", track="HOME_CARE", active=True,
             ))
+            source_session.flush()  # Insert parent before dependent row
             source_session.add(LearnerProgress(
                 progress_id="progress-" + marker, user_id=uid,
                 lesson_id=lesson, status="IN_PROGRESS", progress_percent=40,
