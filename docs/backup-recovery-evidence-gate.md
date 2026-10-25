@@ -8,18 +8,24 @@ Status: DRAFT / NOT VERIFIED IN PRODUCTION. This is a source-based review and a 
 - These files do **not** demonstrate scheduled backups, encrypted backup storage, tested restoration, recovery objectives, or independent ownership of hosting and database accounts.
 - The disposable PostgreSQL CI tests in run #529 validate MFA and learner-export behavior, **not** backup recovery.
 
+## CI verification (2026-10-25)
+- GitHub Actions CI #539 passed: https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/40176358041
+- The disposable PostgreSQL restore test passed and verified the restored synthetic learner and lesson-progress records in a second database.
+- The same CI run passed the MFA concurrency test and all four learner-export concurrency tests; application, migration, and Owner-access jobs also succeeded.
+- This validates a limited synthetic database restore exercise only. Production backup scheduling, retention, encryption, full asset coverage, and disaster-recovery targets remain unverified.
+
 ## Minimum release evidence (all OPEN)
 | Gate | Evidence required | Status |
 | --- | --- | --- |
 | Backup scope | Inventory database, uploaded assets, curriculum, configurations, and external payment records; document exclusions | OPEN |
 | Schedule and retention | Written backup cadence, retention periods, and deletion controls | OPEN |
 | Security | Encryption at rest and in transit, least-privilege backup credentials, restricted restore permissions, and key custody | OPEN |
-| Restore drill | Restore synthetic backup into a fresh disposable database and verify data counts, referential integrity, and application reads | OPEN |
+| Restore drill | Restore synthetic backup into a fresh disposable database and verify data counts, referential integrity, and application reads | SYNTHETIC CI PASS #539; production OPEN |
 | RPO / RTO | Business-approved recovery point and recovery time targets with measured drill results | OPEN |
 | Vendor exit | Verify access to exports and backup copies independent of one provider account | OPEN |
 | Owner approval | Verified Owner MFA, documented operator approval, and independent reviewer signoff before production restore | OPEN |
 
-## Safe synthetic PostgreSQL restore drill (proposed, not executed)
+## Safe synthetic PostgreSQL restore drill (executed in CI #539)
 1. Use an isolated CI PostgreSQL service on localhost with a clearly disposable test database and synthetic identities only. Never connect to Railway or production.
 2. Initialize the schema through the repository's normal test setup, then create a unique synthetic learner and progress/step records.
 3. Export the disposable database using PostgreSQL's native dump utility, avoiding credentials in logs or command arguments.
