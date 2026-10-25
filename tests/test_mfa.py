@@ -223,6 +223,33 @@ class MfaIntegrationTest(unittest.TestCase):
         response = self.client.post("/api/auth/mfa/setup")
         self.assertEqual(response.status_code, 401, response.text)
 
+    def test_learner_export_contains_only_own_safe_fields(self):
+        from crownpath.auth import create_user
+        other = create_user("Other Learner", f"other-{uuid.uuid4().hex}@example.com", self.password, "HOME_CARE")
+        try:
+            self.login_without_mfa()
+            result = self.client.get("/api/learner/my-data-export")
+            self.assertEqual(result.status_code, 200, result.text)
+            payload = result.json()
+            self.assertEqual(payload["format"], "crownpath-learner-export-v1")
+            self.assertEqual(payload["profile"]["user_id"], self.user["user_id"])
+            self.assertNotIn(other["user_id"], result.text)
+            self.assertEqual(set(payload["profile"]), {"user_id", "name", "email", "track", "created_at"})
+            for forbidden in ("password_hash", "mfa_secret", "token_hash", "auth_tokens", "recovery_codes"):
+                self.assertNotIn(forbidden, result.text)
+        finally:
+            db = session()
+            try:
+                db.execute(delete(AuthToken).where(AuthToken.user_id == other["user_id"]))
+                db.execute(delete(User).where(User.user_id == other["user_id"]))
+                db.commit()
+            finally:
+                db.close()
+
+    def test_learner_export_requires_authentication(self):
+        response = self.client.get("/api/learner/my-data-export")
+        self.assertEqual(response.status_code, 401)
+
     def test_simultaneous_mfa_confirmations_only_one_succeeds(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Barrier
