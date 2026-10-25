@@ -57,3 +57,20 @@ def consume_proof(engine, *, token, user_id, session_id, now=None, purpose=PURPO
         """), dict(now=timestamp, digest=digest, user_id=user_id,
                    session_id=session_id, purpose=purpose))
         return result.rowcount == 1
+
+def revoke_session_proofs(engine, *, user_id, session_id, now=None):
+    """Invalidate all unused payment proofs for a specific authenticated session.
+
+    Caller must first authenticate the session server-side; never trust a
+    client-supplied user or session identifier. Test schema only.
+    """
+    if not user_id or not session_id:
+        return 0
+    timestamp = int(time.time()) if now is None else int(now)
+    with engine.begin() as conn:
+        result = conn.execute(text("""
+            UPDATE payment_mfa_proofs_test SET used_at = :now
+            WHERE user_id = :user_id AND session_id = :session_id
+              AND used_at IS NULL
+        """), dict(now=timestamp, user_id=user_id, session_id=session_id))
+        return result.rowcount
