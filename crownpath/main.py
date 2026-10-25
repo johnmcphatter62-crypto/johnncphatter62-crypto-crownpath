@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.responses import FileResponse
@@ -285,6 +285,27 @@ def learner_my_data_export(user=Depends(require_permission("academy.view"))):
     require_learner(user)
     db=session()
     try:
+        # Conservative per-account limit using durable audit records.
+        # This is not an atomic distributed rate limiter; a future release gate must
+        # verify concurrency behavior and consider an external atomic limiter.
+        window_start=datetime.now(timezone.utc)-timedelta(hours=1)
+        recent_exports=db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.user_id==user["user_id"],
+                AuditEvent.action=="learner.self_export",
+                AuditEvent.result=="SUCCESS",
+                AuditEvent.created_at>=window_start,
+            ).limit(5)
+        ).all()
+        if len(recent_exports)>=5:
+            db.add(AuditEvent(
+                user_id=user["user_id"], action="learner.self_export",
+                category="DATA_ACCESS", resource_type="LEARNER_RECORDS",
+                resource_id=user["user_id"], result="REJECTED",
+                reason="hourly_export_limit_exceeded",
+            ))
+            db.commit()
+            raise HTTPException(429,"Too many exports. Please try again later.")
         # Bound records fetched and reject oversized exports rather than returning truncated data.
         export_limit=1000
         progress=db.scalars(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"]).order_by(LearnerProgress.lesson_id).limit(export_limit+1)).all()
