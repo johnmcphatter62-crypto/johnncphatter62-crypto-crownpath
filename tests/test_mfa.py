@@ -246,6 +246,67 @@ class MfaIntegrationTest(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_learner_export_isolates_synthetic_progress_and_steps(self):
+        from crownpath.models import LearnerProgress, LearnerLessonStep
+        other = create_user("Isolated Learner", f"isolated-{uuid.uuid4().hex}@example.com", self.password, "HOME_CARE")
+        my_lesson = f"my-lesson-{uuid.uuid4().hex}"
+        other_lesson = f"other-lesson-{uuid.uuid4().hex}"
+        db = session()
+        try:
+            for user_id, lesson_id in ((self.user["user_id"], my_lesson), (other["user_id"], other_lesson)):
+                db.add(LearnerProgress(
+                    progress_id=f"CP-PR-{uuid.uuid4().hex[:12]}", user_id=user_id,
+                    lesson_id=lesson_id, status="COMPLETED", progress_percent=100,
+                ))
+                db.add(LearnerLessonStep(
+                    step_progress_id=f"CP-ST-{uuid.uuid4().hex[:12]}", user_id=user_id,
+                    lesson_id=lesson_id, step_index=1, completed=True,
+                ))
+            db.commit()
+            self.login_without_mfa()
+            response = self.client.get("/api/learner/my-data-export")
+            self.assertEqual(response.status_code, 200, response.text)
+            payload = response.json()
+            self.assertEqual([p["lesson_id"] for p in payload["learning_progress"]], [my_lesson])
+            self.assertEqual([p["lesson_id"] for p in payload["lesson_steps"]], [my_lesson])
+            self.assertNotIn(other_lesson, response.text)
+            self.assertNotIn(other["user_id"], response.text)
+        finally:
+            db.close()
+            cleanup = session()
+            try:
+                for user_id in (self.user["user_id"], other["user_id"]):
+                    cleanup.execute(delete(LearnerLessonStep).where(LearnerLessonStep.user_id == user_id))
+                    cleanup.execute(delete(LearnerProgress).where(LearnerProgress.user_id == user_id))
+                cleanup.execute(delete(AuthToken).where(AuthToken.user_id == other["user_id"]))
+                cleanup.execute(delete(User).where(User.user_id == other["user_id"]))
+                cleanup.commit()
+            finally:
+                cleanup.close()
+
+    def test_owner_role_cannot_use_learner_export(self):
+        db = session()
+        try:
+            account = db.get(User, self.user["user_id"])
+            account.role = "OWNER"
+            account.track = "OWNER"
+            db.commit()
+        finally:
+            db.close()
+        try:
+            self.login_without_mfa()
+            response = self.client.get("/api/learner/my-data-export")
+            self.assertEqual(response.status_code, 403, response.text)
+        finally:
+            db = session()
+            try:
+                account = db.get(User, self.user["user_id"])
+                account.role = "HOME_CARE"
+                account.track = "HOME_CARE"
+                db.commit()
+            finally:
+                db.close()
+
     def test_learner_export_requires_authentication(self):
         response = self.client.get("/api/learner/my-data-export")
         self.assertEqual(response.status_code, 401)
