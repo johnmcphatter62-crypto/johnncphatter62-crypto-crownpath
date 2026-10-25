@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
-from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
+from crownpath.models import AuditEvent, InstructorRequest, LearnerLessonStep, LearnerProgress, User
 from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code, session_mfa_verified
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
@@ -287,6 +287,14 @@ def learner_my_data_export(user=Depends(require_permission("academy.view"))):
     try:
         progress=db.scalars(select(LearnerProgress).where(LearnerProgress.user_id==user["user_id"]).order_by(LearnerProgress.lesson_id)).all()
         steps=db.scalars(select(LearnerLessonStep).where(LearnerLessonStep.user_id==user["user_id"]).order_by(LearnerLessonStep.lesson_id,LearnerLessonStep.step_index)).all()
+        # Record metadata only: never store exported profile, lesson content, or credentials in audit logs.
+        db.add(AuditEvent(
+            user_id=user["user_id"], action="learner.self_export",
+            category="DATA_ACCESS", resource_type="LEARNER_RECORDS",
+            resource_id=user["user_id"], result="SUCCESS",
+            reason=f"progress_count={len(progress)};step_count={len(steps)}",
+        ))
+        db.commit()
         def iso(value):
             return value.isoformat() if value is not None else None
         return {
