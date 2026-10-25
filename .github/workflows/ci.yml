@@ -163,5 +163,6 @@ jobs:
           pip install pytest httpx
       - name: Run isolated PostgreSQL export tests (must not skip)
         run: |
+          set -o pipefail
           python -m unittest -v tests.test_learner_export_postgres_concurrency 2>&1 | tee postgres-export-test.log
           ! grep -E '(^|[[:space:]])skipped[[:space:]]+[1-9]|^OK \(skipped=' postgres-export-test.log
