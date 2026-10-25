@@ -18,7 +18,7 @@ os.environ.setdefault("CROWNPATH_INSTRUCTOR_ACCESS_APPROVED", "true")
 from crownpath.auth import _hash_mfa_recovery_code, consume_mfa_recovery_code, create_user
 from crownpath.database import init_db, session
 from crownpath.main import app
-from crownpath.models import AuthToken, User
+from crownpath.models import AuditEvent, AuthToken, User
 
 
 class MfaIntegrationTest(unittest.TestCase):
@@ -38,6 +38,7 @@ class MfaIntegrationTest(unittest.TestCase):
         self.client.cookies.clear()
         db = session()
         try:
+            db.execute(delete(AuditEvent).where(AuditEvent.user_id == self.user["user_id"]))
             db.execute(delete(AuthToken).where(AuthToken.user_id == self.user["user_id"]))
             db.execute(delete(User).where(User.user_id == self.user["user_id"]))
             db.commit()
@@ -306,6 +307,25 @@ class MfaIntegrationTest(unittest.TestCase):
                 db.commit()
             finally:
                 db.close()
+
+    def test_learner_export_records_metadata_only_audit_event(self):
+        self.login_without_mfa()
+        response = self.client.get("/api/learner/my-data-export")
+        self.assertEqual(response.status_code, 200, response.text)
+        db = session()
+        try:
+            events = db.query(AuditEvent).filter(
+                AuditEvent.user_id == self.user["user_id"],
+                AuditEvent.action == "learner.self_export",
+            ).all()
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0].result, "SUCCESS")
+            self.assertEqual(events[0].category, "DATA_ACCESS")
+            self.assertEqual(events[0].reason, "progress_count=0;step_count=0")
+            self.assertNotIn(self.email, events[0].reason)
+            self.assertNotIn(self.password, events[0].reason)
+        finally:
+            db.close()
 
     def test_learner_export_requires_authentication(self):
         response = self.client.get("/api/learner/my-data-export")
