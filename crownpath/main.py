@@ -396,6 +396,22 @@ def owner_review_instructor_request(request_id:str,payload:InstructorReviewReque
         return {"request":request_dict(item),"applicant":public_user(get_user_by_id(applicant.user_id))}
     finally: db.close()
 
+@app.get("/api/owner/learner-progress")
+def owner_learner_progress(user=Depends(require_permission("academy.manage"))):
+    if user["role"].upper() != "OWNER":
+        raise HTTPException(403, "Owner access required.")
+    db = session()
+    try:
+        learners = db.scalars(select(User).where(User.role.in_(["HOME_CARE", "BARBER", "COSMETOLOGY_PRO"]))).all()
+        results = []
+        for learner in learners:
+            saved = {item.lesson_id: item for item in db.scalars(select(LearnerProgress).where(LearnerProgress.user_id == learner.user_id)).all()}
+            lessons = [{"lesson_id": lesson_id, "status": saved[lesson_id].status if lesson_id in saved else "NOT_STARTED", "progress": saved[lesson_id].progress_percent if lesson_id in saved else 0} for lesson_id, _ in learner_catalog(learner.role)]
+            results.append({"user_id": learner.user_id, "name": learner.name, "role": learner.role, "lessons_completed": sum(item["status"] == "COMPLETED" for item in lessons), "lessons_total": len(lessons), "overall_progress": round(sum(item["progress"] for item in lessons) / len(lessons)) if lessons else 0, "lessons": lessons})
+        return {"read_only": True, "learners": results}
+    finally:
+        db.close()
+
 @app.get("/api/owner/users")
 def owner_users(user=Depends(require_permission("staff.manage"))): return {"users":[public_user(item) for item in list_users()]}
 @app.patch("/api/owner/users/{user_id}/role")
