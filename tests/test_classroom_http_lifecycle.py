@@ -50,6 +50,10 @@ def test_http_classroom_lifecycle(monkeypatch, tmp_path):
             assert refreshed.json()["modules"][0]["status"] == "COMPLETED"
             assert refreshed.json()["modules"][0]["progress"] == 100
             assert refreshed.json()["overall_progress"] > 0
+            owner_only = client.get("/api/owner/curriculum/progress-summary")
+            assert owner_only.status_code == 403
+            owner_completion = client.get("/api/owner/curriculum/completion-dashboard")
+            assert owner_completion.status_code == 403
             forbidden = client.post("/api/learner/lessons/barber-foundations/open")
             assert forbidden.status_code == 404
     finally:
