@@ -21,6 +21,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                         email="owner-reports@example.com",
                         password_hash=auth.hash_password("SyntheticPassword!2026"),
                         role="OWNER", active=True, mfa_enabled=False))
+            db.add(User(user_id="student-test", name="Synthetic Student",
+                        email="student-report@example.com",
+                        password_hash=auth.hash_password("SyntheticPassword!2026"),
+                        role="COSMETOLOGY_PRO", active=True, mfa_enabled=False))
             db.commit()
         with TestClient(main.app, headers={"Origin": "http://testserver"}) as client:
             login = client.post("/api/auth/login", json={
@@ -30,7 +34,14 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             learner_report = client.get("/api/owner/learner-progress")
             assert learner_report.status_code == 200, learner_report.text
             assert learner_report.json()["read_only"] is True
-            assert learner_report.json()["learners"] == []
+            learners = learner_report.json()["learners"]
+            assert len(learners) == 1
+            assert learners[0]["user_id"] == "student-test"
+            assert learners[0]["role"] == "COSMETOLOGY_PRO"
+            assert learners[0]["lessons_completed"] == 0
+            assert learners[0]["overall_progress"] == 0
+            assert learners[0]["lessons_total"] > 0
+            assert all(lesson["status"] == "NOT_STARTED" for lesson in learners[0]["lessons"])
             progress = client.get("/api/owner/curriculum/progress-summary")
             assert progress.status_code == 200, progress.text
             assert progress.json()["read_only"] is True
