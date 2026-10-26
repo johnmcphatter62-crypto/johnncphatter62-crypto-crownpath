@@ -29,3 +29,22 @@ def test_owner_report_renders_in_chromium():
             assert "1 learner(s) loaded." in page.locator("#learnerProgressMessage").inner_text()
         finally:
             browser.close()
+
+
+def test_public_homepage_keeps_owner_private_and_shows_classroom_entry():
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+    html = (Path(__file__).resolve().parents[1] / "frontend" / "index.html").read_text(encoding="utf-8")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            assert page.get_by_role("heading", name="Sign in to CrownPath").is_visible()
+            assert page.locator("#loginForm").is_visible()
+            assert page.locator("#ownerPanel").is_hidden()
+            assert page.locator("#learnerDashboard").is_hidden()
+            assert page.locator("#loginEmail").get_attribute("type") == "email"
+            assert page.locator("#loginPassword").get_attribute("type") == "password"
+        finally:
+            browser.close()
