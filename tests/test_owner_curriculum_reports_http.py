@@ -80,6 +80,16 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 unchanged_dashboard = learner_client.get("/api/learner/dashboard")
                 assert unchanged_dashboard.status_code == 200, unchanged_dashboard.text
                 assert unchanged_dashboard.json()["overall_progress"] == updated_dashboard.json()["overall_progress"]
+                # Complete the remaining lesson steps through authenticated HTTP.
+                total_steps = opened.json()["lesson"]["total_steps"]
+                assert total_steps >= 1
+                for step_index in range(2, total_steps + 1):
+                    step_result = learner_client.post(
+                        f"/api/learner/lessons/cosmetology-foundations/steps/{step_index}/complete")
+                    assert step_result.status_code == 200, step_result.text
+                finished = learner_client.get("/api/learner/dashboard")
+                assert finished.status_code == 200, finished.text
+                assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
                 private_report = learner_client.get("/api/owner/learner-progress")
                 assert private_report.status_code in (401, 403), private_report.text
             # Owner access remains available after the separate learner login.
