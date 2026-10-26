@@ -42,6 +42,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 assert learner_me.json()["role"] == "COSMETOLOGY_PRO"
                 private_report = learner_client.get("/api/owner/learner-progress")
                 assert private_report.status_code in (401, 403), private_report.text
+            # Owner access remains available after the separate learner login.
+            owner_me = client.get("/api/auth/me")
+            assert owner_me.status_code == 200, owner_me.text
+            assert owner_me.json()["role"] == "OWNER"
             learner_report = client.get("/api/owner/learner-progress")
             assert learner_report.status_code == 200, learner_report.text
             assert learner_report.json()["read_only"] is True
