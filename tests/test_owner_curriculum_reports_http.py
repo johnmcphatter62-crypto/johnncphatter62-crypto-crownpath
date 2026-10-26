@@ -72,7 +72,8 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert learners[0]["lessons_completed"] == 0
             assert learners[0]["overall_progress"] == 0
             assert learners[0]["lessons_total"] > 0
-            assert all(lesson["status"] == "NOT_STARTED" for lesson in learners[0]["lessons"])
+            assert all(lesson["status"] in ("NOT_STARTED", "IN_PROGRESS") for lesson in learners[0]["lessons"])
+            assert any(lesson["status"] == "IN_PROGRESS" for lesson in learners[0]["lessons"])
             from crownpath.models import LearnerProgress
             with Session(engine) as db:
                 db.add(LearnerProgress(
