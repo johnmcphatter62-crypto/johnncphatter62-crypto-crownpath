@@ -80,16 +80,6 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 unchanged_dashboard = learner_client.get("/api/learner/dashboard")
                 assert unchanged_dashboard.status_code == 200, unchanged_dashboard.text
                 assert unchanged_dashboard.json()["overall_progress"] == updated_dashboard.json()["overall_progress"]
-                # Complete the remaining lesson steps through authenticated HTTP.
-                total_steps = opened.json()["lesson"]["total_steps"]
-                assert total_steps >= 1
-                for step_index in range(2, total_steps + 1):
-                    step_result = learner_client.post(
-                        f"/api/learner/lessons/cosmetology-foundations/steps/{step_index}/complete")
-                    assert step_result.status_code == 200, step_result.text
-                finished = learner_client.get("/api/learner/dashboard")
-                assert finished.status_code == 200, finished.text
-                assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
                 private_report = learner_client.get("/api/owner/learner-progress")
                 assert private_report.status_code in (401, 403), private_report.text
             # Owner access remains available after the separate learner login.
@@ -108,14 +98,21 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert learners[0]["lessons_total"] > 0
             assert all(lesson["status"] in ("NOT_STARTED", "IN_PROGRESS") for lesson in learners[0]["lessons"])
             assert any(lesson["status"] == "IN_PROGRESS" for lesson in learners[0]["lessons"])
-            from crownpath.models import LearnerProgress
-            with Session(engine) as db:
-                progress_row = db.query(LearnerProgress).filter_by(
-                    user_id="student-test", lesson_id="cosmetology-foundations"
-                ).one()
-                progress_row.status = "COMPLETED"
-                progress_row.progress_percent = 100
-                db.commit()
+            # Finish the lesson through the real student API after checking partial progress.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as completing_learner:
+                login_again = completing_learner.post("/api/auth/login", json={
+                    "email": "student-report@example.com",
+                    "password": "SyntheticPassword!2026"})
+                assert login_again.status_code == 200, login_again.text
+                total_steps = opened.json()["lesson"]["total_steps"]
+                assert total_steps >= 1
+                for step_index in range(2, total_steps + 1):
+                    step_result = completing_learner.post(
+                        f"/api/learner/lessons/cosmetology-foundations/steps/{step_index}/complete")
+                    assert step_result.status_code == 200, step_result.text
+                finished = completing_learner.get("/api/learner/dashboard")
+                assert finished.status_code == 200, finished.text
+                assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
             updated_report = client.get("/api/owner/learner-progress")
             assert updated_report.status_code == 200, updated_report.text
             updated = updated_report.json()["learners"][0]
