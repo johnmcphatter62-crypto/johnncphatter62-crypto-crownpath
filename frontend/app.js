@@ -148,6 +148,7 @@ async function loadOwnerLearnerProgress(){
   message.textContent='Loading student progress…';
   try{
     const data=await jsonRequest('/api/owner/learner-progress');
+    if(!Array.isArray(data.learners))throw new Error('Student progress report is unavailable.');
     data.learners.forEach(learner=>{
       const card=document.createElement('div');
       card.className='session-card';
