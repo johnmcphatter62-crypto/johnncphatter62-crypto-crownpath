@@ -69,6 +69,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 assert repeated_step.status_code == 200, repeated_step.text
                 assert repeated_step.json()["lesson"]["completed_steps"] == step_lesson["completed_steps"]
                 assert repeated_step.json()["lesson"]["progress"] == step_lesson["progress"]
+                # The classroom dashboard must reflect saved step progress.
+                updated_dashboard = learner_client.get("/api/learner/dashboard")
+                assert updated_dashboard.status_code == 200, updated_dashboard.text
+                assert updated_dashboard.json()["overall_progress"] > dashboard.json()["overall_progress"]
                 private_report = learner_client.get("/api/owner/learner-progress")
                 assert private_report.status_code in (401, 403), private_report.text
             # Owner access remains available after the separate learner login.
