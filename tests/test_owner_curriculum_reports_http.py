@@ -63,6 +63,12 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 step_lesson = first_step.json()["lesson"]
                 assert 1 in step_lesson["completed_steps"]
                 assert step_lesson["progress"] > 0
+                # Completing the same step again must be idempotent.
+                repeated_step = learner_client.post(
+                    "/api/learner/lessons/cosmetology-foundations/steps/1/complete")
+                assert repeated_step.status_code == 200, repeated_step.text
+                assert repeated_step.json()["lesson"]["completed_steps"] == step_lesson["completed_steps"]
+                assert repeated_step.json()["lesson"]["progress"] == step_lesson["progress"]
                 private_report = learner_client.get("/api/owner/learner-progress")
                 assert private_report.status_code in (401, 403), private_report.text
             # Owner access remains available after the separate learner login.
