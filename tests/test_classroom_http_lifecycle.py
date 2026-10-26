@@ -41,6 +41,15 @@ def test_http_classroom_lifecycle(monkeypatch, tmp_path):
             reopened = client.post(f"/api/learner/lessons/{lesson_id}/open")
             assert reopened.status_code == 200
             assert 1 in reopened.json()["lesson"]["completed_steps"]
+            finished = client.post(f"/api/learner/lessons/{lesson_id}/complete")
+            assert finished.status_code == 200, finished.text
+            assert finished.json()["lesson"]["status"] == "COMPLETED"
+            assert finished.json()["lesson"]["progress"] == 100
+            refreshed = client.get("/api/learner/dashboard")
+            assert refreshed.status_code == 200
+            assert refreshed.json()["modules"][0]["status"] == "COMPLETED"
+            assert refreshed.json()["modules"][0]["progress"] == 100
+            assert refreshed.json()["overall_progress"] > 0
             forbidden = client.post("/api/learner/lessons/barber-foundations/open")
             assert forbidden.status_code == 404
     finally:
