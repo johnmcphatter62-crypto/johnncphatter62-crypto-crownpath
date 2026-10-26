@@ -18,11 +18,11 @@ def test_owner_report_renders_in_chromium():
             page = browser.new_page()
             page.set_content(html)
             assert page.locator("#ownerPanel").is_hidden()
-            page.evaluate("""window.jsonRequest = async path => {
+            page.evaluate("""() => { window.jsonRequest = async path => {
                 if (path !== "/api/owner/learner-progress") throw Error("Unexpected endpoint");
                 return {learners: [{name: "Synthetic Student", role: "COSMETOLOGY_PRO",
                     lessons_completed: 2, lessons_total: 4, overall_progress: 50}]};
-            };""")
+            }; }""")
             page.evaluate("() => { " + handler + "; return loadOwnerLearnerProgress(); }")
             assert page.locator("#ownerLearnerProgressList .session-card").count() == 1
             assert "2 of 4 lessons complete" in page.locator("#ownerLearnerProgressList").inner_text()
