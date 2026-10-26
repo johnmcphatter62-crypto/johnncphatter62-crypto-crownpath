@@ -117,6 +117,12 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 assert repeat_last.json()["lesson"]["status"] == "COMPLETED"
                 assert repeat_last.json()["lesson"]["progress"] == 100
                 assert repeat_last.json()["lesson"]["completed_step_count"] == total_steps
+                # Completing the entire lesson again must remain idempotent.
+                repeat_lesson = completing_learner.post(
+                    "/api/learner/lessons/cosmetology-foundations/complete")
+                assert repeat_lesson.status_code == 200, repeat_lesson.text
+                assert repeat_lesson.json()["lesson"]["status"] == "COMPLETED"
+                assert repeat_lesson.json()["lesson"]["progress"] == 100
                 finished = completing_learner.get("/api/learner/dashboard")
                 assert finished.status_code == 200, finished.text
                 assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
