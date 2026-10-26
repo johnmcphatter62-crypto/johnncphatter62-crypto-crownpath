@@ -74,3 +74,32 @@ def test_browser_student_progress_rejects_html_injection():
             assert "<img src=x onerror=alert(1)>" in page.locator("#ownerLearnerProgressList").inner_text()
         finally:
             browser.close()
+
+
+def test_browser_progress_refresh_clears_stale_learner_cards():
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+    js = (root / "frontend" / "app.js").read_text(encoding="utf-8")
+    start = js.index("async function loadOwnerLearnerProgress()")
+    end = js.index("async function loadInstructorRequests()", start)
+    handler = js[start:end]
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            page.evaluate("""() => {
+                window.reportLearners = [{name: "Synthetic Learner", role: "BARBER",
+                    lessons_completed: 1, lessons_total: 3, overall_progress: 33}];
+                window.jsonRequest = async () => ({learners: window.reportLearners});
+            }""")
+            page.evaluate("() => { " + handler + "; return loadOwnerLearnerProgress(); }")
+            assert page.locator("#ownerLearnerProgressList .session-card").count() == 1
+            page.evaluate("() => { window.reportLearners = []; }")
+            page.evaluate("() => { " + handler + "; return loadOwnerLearnerProgress(); }")
+            assert page.locator("#ownerLearnerProgressList .session-card").count() == 0
+            assert page.locator("#learnerProgressMessage").inner_text() == "No learners to report yet."
+        finally:
+            browser.close()
