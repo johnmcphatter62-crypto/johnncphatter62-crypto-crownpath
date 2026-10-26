@@ -48,3 +48,19 @@ def test_owner_progress_handles_invalid_and_empty_api_responses():
     assert 'No learners to report yet.' in handler
     assert 'message.textContent=error.message' in handler
     assert 'list.replaceChildren()' in handler
+
+
+def test_owner_progress_refresh_is_owner_only_and_read_only():
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+    script = (root / "frontend" / "app.js").read_text(encoding="utf-8")
+    assert html.index('id="ownerPanel"') < html.index('id="refreshLearnerProgress"')
+    assert "if(user.role==='OWNER')" in script
+    assert "loadOwnerLearnerProgress();loadOwnerCurriculum()" in script
+    start = script.index("async function loadOwnerLearnerProgress()")
+    end = script.index("async function loadInstructorRequests()", start)
+    handler = script[start:end]
+    assert "jsonRequest('/api/owner/learner-progress')" in handler
+    assert "list.replaceChildren()" in handler
+    assert "list.append(card)" in handler
+    assert "fetch(" not in handler
