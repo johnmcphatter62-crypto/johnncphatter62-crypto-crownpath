@@ -19,15 +19,15 @@ def test_http_classroom_lifecycle(monkeypatch, tmp_path):
         monkeypatch.setenv("CROWNPATH_LEARNER_ACCESS_APPROVED", "true")
         with Session(engine) as db:
             db.add(User(user_id="http-learner", name="HTTP Learner",
-                        email="http-learner@example.invalid",
+                        email="http-learner@example.com",
                         password_hash=auth.hash_password("SyntheticPassword!2026"),
                         role="COSMETOLOGY_PRO", active=True, mfa_enabled=False))
             db.commit()
         with TestClient(main.app) as client:
             login = client.post("/api/auth/login", json={
-                "email": "http-learner@example.invalid",
+                "email": "http-learner@example.com",
                 "password": "SyntheticPassword!2026"})
-            assert login.status_code == 200
+            assert login.status_code == 200, login.text
             assert login.json()["authenticated"] is True
             dashboard = client.get("/api/learner/dashboard")
             assert dashboard.status_code == 200
