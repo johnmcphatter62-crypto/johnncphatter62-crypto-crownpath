@@ -27,3 +27,12 @@ def test_owner_progress_page_escapes_student_names():
     assert "list.append(card)" in handler
     assert "innerHTML=learner." not in handler
     assert "eval(" not in handler
+
+def test_owner_dashboard_sections_are_labeled():
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert "<h2>Owner Management Dashboard</h2>" in html
+    assert "<h3>Student Learning Progress</h3>" in html or 'id="ownerLearnerProgressTitle">Student Learning Progress</h3>' in html
+    assert "<h3>Instructor Requests</h3>" in html
+    assert "<h2>Build CrownPath Curriculum</h2>" in html
+    assert 'id="ownerPanel"' in html
