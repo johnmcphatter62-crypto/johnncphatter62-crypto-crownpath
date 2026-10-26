@@ -47,6 +47,11 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 ):
                     protected = learner_client.get(protected_path)
                     assert protected.status_code in (401, 403), (protected_path, protected.text)
+                # Learner may read their own classroom dashboard, not Owner data.
+                dashboard = learner_client.get("/api/learner/dashboard")
+                assert dashboard.status_code == 200, dashboard.text
+                assert isinstance(dashboard.json()["modules"], list)
+                assert "overall_progress" in dashboard.json()
                 private_report = learner_client.get("/api/owner/learner-progress")
                 assert private_report.status_code in (401, 403), private_report.text
             # Owner access remains available after the separate learner login.
