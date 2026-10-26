@@ -131,6 +131,9 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 completion_dashboard = completing_learner.get("/api/learner/dashboard")
                 assert completion_dashboard.status_code == 200, completion_dashboard.text
                 assert completion_dashboard.json()["overall_progress"] > updated_dashboard.json()["overall_progress"]
+                # A learner must still be denied the Owner report after completing a lesson.
+                denied_after_completion = completing_learner.get("/api/owner/learner-progress")
+                assert denied_after_completion.status_code in (401, 403), denied_after_completion.text
                 finished = completing_learner.get("/api/learner/dashboard")
                 assert finished.status_code == 200, finished.text
                 assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
