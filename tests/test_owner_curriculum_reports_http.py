@@ -110,6 +110,13 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                     step_result = completing_learner.post(
                         f"/api/learner/lessons/cosmetology-foundations/steps/{step_index}/complete")
                     assert step_result.status_code == 200, step_result.text
+                # A repeat completion request must not add extra completed steps.
+                repeat_last = completing_learner.post(
+                    f"/api/learner/lessons/cosmetology-foundations/steps/{total_steps}/complete")
+                assert repeat_last.status_code == 200, repeat_last.text
+                assert repeat_last.json()["lesson"]["status"] == "COMPLETED"
+                assert repeat_last.json()["lesson"]["progress"] == 100
+                assert repeat_last.json()["lesson"]["completed_step_count"] == total_steps
                 finished = completing_learner.get("/api/learner/dashboard")
                 assert finished.status_code == 200, finished.text
                 assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
