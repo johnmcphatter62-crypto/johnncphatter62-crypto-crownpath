@@ -31,6 +31,17 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 "email": "owner-reports@example.com",
                 "password": "SyntheticPassword!2026"})
             assert login.status_code == 200, login.text
+            # A separate authenticated learner must not access Owner reports.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
+                learner_login = learner_client.post("/api/auth/login", json={
+                    "email": "student-report@example.com",
+                    "password": "SyntheticPassword!2026"})
+                assert learner_login.status_code == 200, learner_login.text
+                learner_me = learner_client.get("/api/auth/me")
+                assert learner_me.status_code == 200, learner_me.text
+                assert learner_me.json()["role"] == "COSMETOLOGY_PRO"
+                private_report = learner_client.get("/api/owner/learner-progress")
+                assert private_report.status_code in (401, 403), private_report.text
             learner_report = client.get("/api/owner/learner-progress")
             assert learner_report.status_code == 200, learner_report.text
             assert learner_report.json()["read_only"] is True
