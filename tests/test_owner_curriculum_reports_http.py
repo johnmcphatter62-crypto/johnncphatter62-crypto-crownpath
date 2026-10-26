@@ -27,6 +27,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 "email": "owner-reports@example.com",
                 "password": "SyntheticPassword!2026"})
             assert login.status_code == 200, login.text
+            learner_report = client.get("/api/owner/learner-progress")
+            assert learner_report.status_code == 200, learner_report.text
+            assert learner_report.json()["read_only"] is True
+            assert learner_report.json()["learners"] == []
             progress = client.get("/api/owner/curriculum/progress-summary")
             assert progress.status_code == 200, progress.text
             assert progress.json()["read_only"] is True
