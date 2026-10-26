@@ -123,6 +123,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 assert repeat_lesson.status_code == 200, repeat_lesson.text
                 assert repeat_lesson.json()["lesson"]["status"] == "COMPLETED"
                 assert repeat_lesson.json()["lesson"]["progress"] == 100
+                # A completed lesson must reject nonexistent steps without losing completion.
+                invalid_after_completion = completing_learner.post(
+                    "/api/learner/lessons/cosmetology-foundations/steps/999/complete")
+                assert invalid_after_completion.status_code == 404, invalid_after_completion.text
                 finished = completing_learner.get("/api/learner/dashboard")
                 assert finished.status_code == 200, finished.text
                 assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
