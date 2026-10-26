@@ -24,6 +24,14 @@ def test_http_classroom_lifecycle(monkeypatch, tmp_path):
                         role="COSMETOLOGY_PRO", active=True, mfa_enabled=False))
             db.commit()
         with TestClient(main.app, headers={"Origin": "http://testserver"}) as client:
+            anonymous = client.get("/api/learner/dashboard")
+            assert anonymous.status_code == 401
+            anonymous_owner = client.get("/api/owner/curriculum/progress-summary")
+            assert anonymous_owner.status_code == 401
+            bad_login = client.post("/api/auth/login", json={
+                "email": "http-learner@example.com",
+                "password": "IncorrectPassword!2026"})
+            assert bad_login.status_code == 401
             login = client.post("/api/auth/login", json={
                 "email": "http-learner@example.com",
                 "password": "SyntheticPassword!2026"})
