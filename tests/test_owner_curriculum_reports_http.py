@@ -76,13 +76,11 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert any(lesson["status"] == "IN_PROGRESS" for lesson in learners[0]["lessons"])
             from crownpath.models import LearnerProgress
             with Session(engine) as db:
-                db.add(LearnerProgress(
-                    progress_id="test-owner-report-progress",
-                    user_id="student-test",
-                    lesson_id="cosmetology-foundations",
-                    status="COMPLETED",
-                    progress_percent=100,
-                ))
+                progress_row = db.query(LearnerProgress).filter_by(
+                    user_id="student-test", lesson_id="cosmetology-foundations"
+                ).one()
+                progress_row.status = "COMPLETED"
+                progress_row.progress_percent = 100
                 db.commit()
             updated_report = client.get("/api/owner/learner-progress")
             assert updated_report.status_code == 200, updated_report.text
