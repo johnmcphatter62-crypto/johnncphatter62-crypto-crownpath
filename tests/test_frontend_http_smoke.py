@@ -15,3 +15,12 @@ def test_homepage_serves_owner_classroom_and_student_progress_assets():
         assert script.status_code == 200, script.text
         assert "loadOwnerLearnerProgress()" in script.text
         assert "/api/owner/learner-progress" in script.text
+
+
+def test_homepage_serves_frontend_with_safe_default_visibility():
+    with TestClient(main.app) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert '<section id="ownerPanel" class="access" hidden>' in page.text
+        assert '<section id="learnerDashboard"' in page.text
+        assert 'id="refreshLearnerProgress"' in page.text
