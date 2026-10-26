@@ -42,6 +42,23 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert learners[0]["overall_progress"] == 0
             assert learners[0]["lessons_total"] > 0
             assert all(lesson["status"] == "NOT_STARTED" for lesson in learners[0]["lessons"])
+            from crownpath.models import LearnerProgress
+            with Session(engine) as db:
+                db.add(LearnerProgress(
+                    progress_id="test-owner-report-progress",
+                    user_id="student-test",
+                    lesson_id="cosmetology-foundations",
+                    status="COMPLETED",
+                    progress_percent=100,
+                ))
+                db.commit()
+            updated_report = client.get("/api/owner/learner-progress")
+            assert updated_report.status_code == 200, updated_report.text
+            updated = updated_report.json()["learners"][0]
+            assert updated["lessons_completed"] == 1
+            assert updated["overall_progress"] > 0
+            assert updated["lessons"][0]["status"] == "COMPLETED"
+            assert updated["lessons"][0]["progress"] == 100
             progress = client.get("/api/owner/curriculum/progress-summary")
             assert progress.status_code == 200, progress.text
             assert progress.json()["read_only"] is True
