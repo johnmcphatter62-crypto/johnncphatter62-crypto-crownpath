@@ -52,6 +52,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 assert dashboard.status_code == 200, dashboard.text
                 assert isinstance(dashboard.json()["modules"], list)
                 assert "overall_progress" in dashboard.json()
+                # A learner may open a curriculum lesson in their own session.
+                opened = learner_client.post("/api/learner/lessons/cosmetology-foundations/open")
+                assert opened.status_code == 200, opened.text
+                assert opened.json()["lesson"]["lesson_id"] == "cosmetology-foundations"
                 private_report = learner_client.get("/api/owner/learner-progress")
                 assert private_report.status_code in (401, 403), private_report.text
             # Owner access remains available after the separate learner login.
