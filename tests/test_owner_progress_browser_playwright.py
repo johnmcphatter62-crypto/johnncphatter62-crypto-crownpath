@@ -103,3 +103,45 @@ def test_browser_progress_refresh_clears_stale_learner_cards():
             assert page.locator("#learnerProgressMessage").inner_text() == "No learners to report yet."
         finally:
             browser.close()
+
+
+def test_browser_student_and_owner_dashboard_visibility_by_role():
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+    js = (root / "frontend" / "app.js").read_text(encoding="utf-8")
+    start = js.index("function showSession(user)")
+    end = js.index("function clearSession()", start)
+    handler = js[start:end]
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            page.evaluate("""() => {
+                window.resetMfaLogin = () => {};
+                window.hideRecoveryCodes = () => {};
+                window.loadLearnerDashboard = () => {};
+                window.loadMyInstructorRequests = () => {};
+                window.loadOwnerUsers = () => {};
+                window.loadInstructorRequests = () => {};
+                window.loadOwnerLearnerProgress = () => {};
+                window.loadOwnerCurriculum = () => {};
+                window.sessionCard = document.querySelector("#sessionCard");
+                window.ownerPanel = document.querySelector("#ownerPanel");
+                window.ownerActivation = document.querySelector("#ownerActivation");
+                window.learnerDashboard = document.querySelector("#learnerDashboard");
+                window.instructorRequestPanel = document.querySelector("#instructorRequestPanel");
+                window.mfaSetupButton = document.querySelector("#mfaSetupButton");
+                window.mfaSetupPanel = document.querySelector("#mfaSetupPanel");
+                window.mfaSetupMessage = document.querySelector("#mfaSetupMessage");
+            }""")
+            page.evaluate("() => { " + handler + "; showSession({name: 'Synthetic Learner', role: 'COSMETOLOGY_PRO', mfa_enabled: false}); }")
+            assert page.locator("#learnerDashboard").is_visible()
+            assert page.locator("#ownerPanel").is_hidden()
+            page.evaluate("() => { " + handler + "; showSession({name: 'Synthetic Owner', role: 'OWNER', mfa_enabled: true}); }")
+            assert page.locator("#ownerPanel").is_visible()
+            assert page.locator("#learnerDashboard").is_hidden()
+        finally:
+            browser.close()
