@@ -30,3 +30,13 @@ def test_anonymous_visitor_cannot_read_owner_student_progress():
     with TestClient(main.app) as client:
         response = client.get("/api/owner/learner-progress")
         assert response.status_code in (401, 403), response.text
+
+
+def test_visitor_can_load_homepage_without_owner_report_data():
+    with TestClient(main.app) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert "Student Learning Progress" in page.text
+        report = client.get("/api/owner/learner-progress")
+        assert report.status_code in (401, 403)
+        assert "learners" not in report.json()
