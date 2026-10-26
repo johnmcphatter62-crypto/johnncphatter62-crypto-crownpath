@@ -23,7 +23,7 @@ def test_http_classroom_lifecycle(monkeypatch, tmp_path):
                         password_hash=auth.hash_password("SyntheticPassword!2026"),
                         role="COSMETOLOGY_PRO", active=True, mfa_enabled=False))
             db.commit()
-        with TestClient(main.app) as client:
+        with TestClient(main.app, headers={"Origin": "http://testserver"}) as client:
             login = client.post("/api/auth/login", json={
                 "email": "http-learner@example.com",
                 "password": "SyntheticPassword!2026"})
