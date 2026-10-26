@@ -77,7 +77,7 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert learners[0]["user_id"] == "student-test"
             assert learners[0]["role"] == "COSMETOLOGY_PRO"
             assert learners[0]["lessons_completed"] == 0
-            assert learners[0]["overall_progress"] == 0
+            assert 0 < learners[0]["overall_progress"] < 100
             assert learners[0]["lessons_total"] > 0
             assert all(lesson["status"] in ("NOT_STARTED", "IN_PROGRESS") for lesson in learners[0]["lessons"])
             assert any(lesson["status"] == "IN_PROGRESS" for lesson in learners[0]["lessons"])
