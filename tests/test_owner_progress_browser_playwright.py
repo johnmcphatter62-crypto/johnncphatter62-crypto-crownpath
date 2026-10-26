@@ -24,7 +24,7 @@ def test_owner_report_renders_in_chromium():
                     lessons_completed: 2, lessons_total: 4, overall_progress: 50}]};
             };""")
             page.evaluate(handler)
-            page.evaluate("loadOwnerLearnerProgress()")
+            page.evaluate("() => loadOwnerLearnerProgress()")
             assert page.locator("#ownerLearnerProgressList .session-card").count() == 1
             assert "2 of 4 lessons complete" in page.locator("#ownerLearnerProgressList").inner_text()
             assert "1 learner(s) loaded." in page.locator("#learnerProgressMessage").inner_text()
