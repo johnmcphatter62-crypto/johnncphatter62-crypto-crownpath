@@ -24,3 +24,9 @@ def test_homepage_serves_frontend_with_safe_default_visibility():
         assert '<section id="ownerPanel" class="access" hidden>' in page.text
         assert '<section id="learnerDashboard"' in page.text
         assert 'id="refreshLearnerProgress"' in page.text
+
+
+def test_anonymous_visitor_cannot_read_owner_student_progress():
+    with TestClient(main.app) as client:
+        response = client.get("/api/owner/learner-progress")
+        assert response.status_code in (401, 403), response.text
