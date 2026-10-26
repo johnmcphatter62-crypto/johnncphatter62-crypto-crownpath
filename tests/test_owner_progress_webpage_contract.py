@@ -36,3 +36,15 @@ def test_owner_dashboard_sections_are_labeled():
     assert "<h3>Instructor Requests</h3>" in html
     assert "<h2>Build CrownPath Curriculum</h2>" in html
     assert 'id="ownerPanel"' in html
+
+
+def test_owner_progress_handles_invalid_and_empty_api_responses():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / 'frontend' / 'app.js').read_text(encoding='utf-8')
+    start = script.index('async function loadOwnerLearnerProgress()')
+    end = script.index('async function loadInstructorRequests()', start)
+    handler = script[start:end]
+    assert 'Array.isArray(data.learners)' in handler
+    assert 'No learners to report yet.' in handler
+    assert 'message.textContent=error.message' in handler
+    assert 'list.replaceChildren()' in handler
