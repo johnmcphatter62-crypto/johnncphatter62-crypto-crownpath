@@ -109,7 +109,12 @@ def _active_session(user_id: str, session_id: str) -> bool:
             AuthToken.token_type == "SESSION",
             AuthToken.used_at.is_(None),
         ))
-        return bool(token and token.expires_at >= now_utc())
+        if not token:
+            return False
+        expires_at = token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at >= now_utc()
     finally:
         db.close()
 
