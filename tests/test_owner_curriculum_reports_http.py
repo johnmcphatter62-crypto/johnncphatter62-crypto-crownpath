@@ -39,6 +39,17 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             )
             assert cross_origin_mutation.status_code == 403, cross_origin_mutation.text
             assert "cross-origin" in cross_origin_mutation.text.lower()
+            # A foreign website must not be able to change staff account roles
+            # using an authenticated Owner's session cookie.
+            foreign_role_change = client.patch(
+                "/api/owner/users/student-test/role",
+                json={"role": "INSTRUCTOR"},
+                headers={"Origin": "https://untrusted.example"},
+            )
+            assert foreign_role_change.status_code == 403, foreign_role_change.text
+            # The rejected request must leave the learner's role unchanged.
+            with Session(engine) as db:
+                assert db.get(User, "student-test").role == "COSMETOLOGY_PRO"
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
