@@ -176,6 +176,12 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             # including after the learner completes the curriculum lesson.
             assert "password_hash" not in updated_report.text.lower()
             assert "syntheticpassword!2026" not in updated_report.text.lower()
+            # The Owner's completion report must not accidentally include
+            # unrelated learner accounts or duplicate the completed learner.
+            assert len(updated_report.json()["learners"]) == 1
+            assert [learner["user_id"] for learner in updated_report.json()["learners"]] == [
+                "student-test"
+            ]
             assert updated_report.json()["read_only"] is True
             # The completed lesson must remain visible to the Owner after a fresh
             # learner login and must not change the report's learner identity.
