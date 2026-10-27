@@ -251,6 +251,11 @@ def test_learner_progress_is_isolated_between_students(monkeypatch, tmp_path):
             )
             assert completed.status_code == 200, completed.text
 
+            # A second learner must not inherit the first learner's lesson completion.
+            beta_opened = beta.post("/api/learner/lessons/cosmetology-foundations/open")
+            assert beta_opened.status_code == 200, beta_opened.text
+            assert beta_opened.json()["lesson"]["completed_step_count"] == 0
+            assert beta_opened.json()["lesson"]["completed_steps"] == []
             alpha_after = alpha.get("/api/learner/dashboard")
             beta_after = beta.get("/api/learner/dashboard")
             assert alpha_after.status_code == 200, alpha_after.text
