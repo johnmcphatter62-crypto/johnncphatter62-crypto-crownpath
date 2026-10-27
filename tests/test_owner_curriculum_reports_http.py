@@ -162,6 +162,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 lesson["status"] == "COMPLETED" for lesson in updated["lessons"]
             )
             assert updated["overall_progress"] > learners[0]["overall_progress"]
+            # The Owner's report must be stable across consecutive read-only requests.
+            repeat_report = client.get("/api/owner/learner-progress")
+            assert repeat_report.status_code == 200, repeat_report.text
+            assert repeat_report.json() == updated_report.json()
             progress = client.get("/api/owner/curriculum/progress-summary")
             assert progress.status_code == 200, progress.text
             assert progress.json()["read_only"] is True
