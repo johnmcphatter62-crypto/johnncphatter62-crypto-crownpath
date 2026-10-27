@@ -197,3 +197,71 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert completion.json()["activation_performed"] is False
     finally:
         engine.dispose()
+
+
+def test_learner_progress_is_isolated_between_students(monkeypatch, tmp_path):
+    """One synthetic learner's lesson activity must not change another's dashboard."""
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'separate_learner_progress.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        Base.metadata.create_all(engine)
+        monkeypatch.setattr(auth, "session", lambda: Session(engine))
+        monkeypatch.setattr(main, "session", lambda: Session(engine))
+        monkeypatch.setattr(auth, "SECRET_KEY", "isolated-two-learner-test-key")
+        with Session(engine) as db:
+            for user_id, email in (
+                ("student-alpha", "student-alpha@example.com"),
+                ("student-beta", "student-beta@example.com"),
+            ):
+                db.add(User(
+                    user_id=user_id,
+                    name="Synthetic " + user_id,
+                    email=email,
+                    password_hash=auth.hash_password("SyntheticPassword!2026"),
+                    role="COSMETOLOGY_PRO",
+                    active=True,
+                    mfa_enabled=False,
+                ))
+            db.commit()
+        with (
+            TestClient(main.app, headers={"Origin": "http://testserver"}) as alpha,
+            TestClient(main.app, headers={"Origin": "http://testserver"}) as beta,
+        ):
+            for client, email in (
+                (alpha, "student-alpha@example.com"),
+                (beta, "student-beta@example.com"),
+            ):
+                login = client.post("/api/auth/login", json={
+                    "email": email,
+                    "password": "SyntheticPassword!2026",
+                })
+                assert login.status_code == 200, login.text
+
+            beta_before = beta.get("/api/learner/dashboard")
+            alpha_before = alpha.get("/api/learner/dashboard")
+            assert beta_before.status_code == 200, beta_before.text
+            assert alpha_before.status_code == 200, alpha_before.text
+
+            opened = alpha.post("/api/learner/lessons/cosmetology-foundations/open")
+            assert opened.status_code == 200, opened.text
+            completed = alpha.post(
+                "/api/learner/lessons/cosmetology-foundations/steps/1/complete"
+            )
+            assert completed.status_code == 200, completed.text
+
+            alpha_after = alpha.get("/api/learner/dashboard")
+            beta_after = beta.get("/api/learner/dashboard")
+            assert alpha_after.status_code == 200, alpha_after.text
+            assert beta_after.status_code == 200, beta_after.text
+            assert (
+                alpha_after.json()["overall_progress"]
+                > alpha_before.json()["overall_progress"]
+            )
+            assert (
+                beta_after.json()["overall_progress"]
+                == beta_before.json()["overall_progress"]
+            )
+    finally:
+        engine.dispose()
