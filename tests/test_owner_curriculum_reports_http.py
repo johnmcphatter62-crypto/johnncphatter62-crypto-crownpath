@@ -278,6 +278,13 @@ def test_learner_progress_is_isolated_between_students(monkeypatch, tmp_path):
             assert beta_reopened.status_code == 200, beta_reopened.text
             assert 2 in beta_reopened.json()["lesson"]["completed_steps"]
             assert 1 not in beta_reopened.json()["lesson"]["completed_steps"]
+            # Each student's dashboard must remain stable across repeated reads.
+            beta_dashboard_repeat = beta.get("/api/learner/dashboard")
+            assert beta_dashboard_repeat.status_code == 200, beta_dashboard_repeat.text
+            assert (
+                beta_dashboard_repeat.json()["overall_progress"]
+                == beta.get("/api/learner/dashboard").json()["overall_progress"]
+            )
             alpha_after = alpha.get("/api/learner/dashboard")
             beta_after = beta.get("/api/learner/dashboard")
             assert alpha_after.status_code == 200, alpha_after.text
