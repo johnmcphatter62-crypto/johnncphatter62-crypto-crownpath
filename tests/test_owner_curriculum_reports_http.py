@@ -67,6 +67,26 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert owner_deactivation.status_code == 400, owner_deactivation.text
             with Session(engine) as db:
                 assert db.get(User, "owner-test").active is True
+            # Changing a learner's role must revoke any existing login session.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as revoked_client:
+                revoked_login = revoked_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert revoked_login.status_code == 200, revoked_login.text
+                assert revoked_client.get("/api/auth/me").status_code == 200
+                role_update = client.patch(
+                    "/api/owner/users/student-test/role",
+                    json={"role": "BARBER"},
+                )
+                assert role_update.status_code == 200, role_update.text
+                assert revoked_client.get("/api/auth/me").status_code == 401
+                restore_role = client.patch(
+                    "/api/owner/users/student-test/role",
+                    json={"role": "COSMETOLOGY_PRO"},
+                )
+                assert restore_role.status_code == 200, restore_role.text
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
