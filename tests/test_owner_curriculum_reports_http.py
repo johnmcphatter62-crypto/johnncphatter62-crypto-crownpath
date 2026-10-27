@@ -104,6 +104,13 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                     "email": "student-report@example.com",
                     "password": "SyntheticPassword!2026"})
                 assert login_again.status_code == 200, login_again.text
+                # Progress saved in the first login must survive a fresh session.
+                resumed_dashboard = completing_learner.get("/api/learner/dashboard")
+                assert resumed_dashboard.status_code == 200, resumed_dashboard.text
+                assert (
+                    resumed_dashboard.json()["overall_progress"]
+                    == updated_dashboard.json()["overall_progress"]
+                )
                 total_steps = opened.json()["lesson"]["total_steps"]
                 assert total_steps >= 1
                 for step_index in range(2, total_steps + 1):
