@@ -134,6 +134,13 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 # A learner must still be denied the Owner report after completing a lesson.
                 denied_after_completion = completing_learner.get("/api/owner/learner-progress")
                 assert denied_after_completion.status_code in (401, 403), denied_after_completion.text
+                # Completing a lesson must not unlock the Owner curriculum dashboards.
+                for owner_endpoint in (
+                    "/api/owner/curriculum/progress-summary",
+                    "/api/owner/curriculum/completion-dashboard",
+                ):
+                    denied = completing_learner.get(owner_endpoint)
+                    assert denied.status_code in (401, 403), denied.text
                 finished = completing_learner.get("/api/learner/dashboard")
                 assert finished.status_code == 200, finished.text
                 assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
