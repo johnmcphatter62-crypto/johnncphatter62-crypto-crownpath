@@ -271,6 +271,13 @@ def test_learner_progress_is_isolated_between_students(monkeypatch, tmp_path):
             assert alpha_after_beta_step.status_code == 200, alpha_after_beta_step.text
             assert 1 in alpha_after_beta_step.json()["lesson"]["completed_steps"]
             assert 2 not in alpha_after_beta_step.json()["lesson"]["completed_steps"]
+            # Reopening Student A's lesson must not erase Student B's independent step.
+            beta_reopened = beta.post(
+                "/api/learner/lessons/cosmetology-foundations/open"
+            )
+            assert beta_reopened.status_code == 200, beta_reopened.text
+            assert 2 in beta_reopened.json()["lesson"]["completed_steps"]
+            assert 1 not in beta_reopened.json()["lesson"]["completed_steps"]
             alpha_after = alpha.get("/api/learner/dashboard")
             beta_after = beta.get("/api/learner/dashboard")
             assert alpha_after.status_code == 200, alpha_after.text
