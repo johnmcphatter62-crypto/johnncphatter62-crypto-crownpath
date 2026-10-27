@@ -88,6 +88,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert owner_me.json()["role"] == "OWNER"
             learner_report = client.get("/api/owner/learner-progress")
             assert learner_report.status_code == 200, learner_report.text
+            # Read-only reporting must never disclose authentication credentials.
+            report_body = learner_report.text.lower()
+            assert "password_hash" not in report_body
+            assert "syntheticpassword!2026" not in report_body
             assert learner_report.json()["read_only"] is True
             learners = learner_report.json()["learners"]
             assert len(learners) == 1
