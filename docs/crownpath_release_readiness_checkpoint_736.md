@@ -17,6 +17,13 @@ Status: **BLOCKED — isolated development evidence only.**
 - **Scope limitation:** This proves a disposable SQLite backup/restore path under CI. It does not test a real CrownPath production backup, production PostgreSQL restore, disaster recovery timing, backup encryption, retention, or operational approval.
 - **Release flag remains unverified:** Do not set `CROWNPATH_BACKUP_RESTORE_VERIFIED=true` on the basis of this isolated test.
 
+## Production startup guard checkpoint — CI #740
+
+- CI #740 completed successfully for application, browser-smoke, owner-access, and migration jobs at commit `8ffaf4402e6292ec285bfa98771f022c2cb2b0d5`.
+- `tests/test_production_startup_guard_isolated.py` checks missing production database/secret settings, unsafe release flags, and expected behavior with fully configured *synthetic* values.
+- **Scope limitation:** These are configuration-logic tests. They do not inspect or alter Railway, DNS, TLS termination, deployed secrets, backup systems, or a real production environment.
+- **Release status unchanged:** No production launch approval or backup-verification flag is granted by CI #740.
+
 ## Outstanding release gates
 
 1. **Backup restore evidence:** Perform an independently reviewed, non-production restoration of a representative production-format backup (sanitized as appropriate), validate integrity and migration compatibility, record recovery time and evidence, and obtain reviewer approval. Never restore over production.
