@@ -435,7 +435,14 @@ def _clear_login_failures(user_id):
 
 def _is_locked(user):
     locked_until = user.get("locked_until")
-    return bool(locked_until and locked_until > now_utc())
+    if locked_until is None:
+        return False
+    # SQLite may return a naive timestamp for a timezone-aware SQLAlchemy
+    # column. CrownPath stores UTC timestamps; interpret legacy naive values
+    # as UTC rather than raising during authentication.
+    if locked_until.tzinfo is None:
+        locked_until = locked_until.replace(tzinfo=timezone.utc)
+    return locked_until > now_utc()
 
 
 def authenticate(email: str, password: str):
