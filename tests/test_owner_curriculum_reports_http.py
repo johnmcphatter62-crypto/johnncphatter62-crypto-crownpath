@@ -127,6 +127,29 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                     "/api/auth/me", cookies={"crownpath_session": old_cookie}
                 )
                 assert replay.status_code == 401, replay.text
+            # An expired server-side session must be rejected even if its
+            # signed cookie is still presented by the client.
+            from datetime import timedelta
+            from sqlalchemy import update
+            from crownpath.models import AuthToken
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as expiry_client:
+                expiry_login = expiry_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert expiry_login.status_code == 200, expiry_login.text
+                assert expiry_client.get("/api/auth/me").status_code == 200
+                with Session(engine) as db:
+                    db.execute(
+                        update(AuthToken)
+                        .where(AuthToken.user_id == "student-test",
+                               AuthToken.token_type == "SESSION",
+                               AuthToken.used_at.is_(None))
+                        .values(expires_at=auth.now_utc() - timedelta(minutes=1))
+                    )
+                    db.commit()
+                assert expiry_client.get("/api/auth/me").status_code == 401
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
