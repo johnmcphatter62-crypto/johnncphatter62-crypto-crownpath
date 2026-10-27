@@ -156,6 +156,12 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert updated["overall_progress"] <= 100
             assert sum(item["status"] == "COMPLETED" for item in updated["lessons"]) == 1
             assert all(item["progress"] in (0, 100) for item in updated["lessons"])
+            # Repeated completion requests must not inflate the Owner's totals.
+            assert updated["lessons_completed"] <= updated["lessons_total"]
+            assert updated["lessons_completed"] == sum(
+                lesson["status"] == "COMPLETED" for lesson in updated["lessons"]
+            )
+            assert updated["overall_progress"] > learners[0]["overall_progress"]
             progress = client.get("/api/owner/curriculum/progress-summary")
             assert progress.status_code == 200, progress.text
             assert progress.json()["read_only"] is True
