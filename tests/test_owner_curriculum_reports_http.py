@@ -111,6 +111,9 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                     resumed_dashboard.json()["overall_progress"]
                     == updated_dashboard.json()["overall_progress"]
                 )
+                # The Owner-only report must remain inaccessible after a fresh learner login.
+                resumed_owner_report = completing_learner.get("/api/owner/learner-progress")
+                assert resumed_owner_report.status_code in (401, 403), resumed_owner_report.text
                 total_steps = opened.json()["lesson"]["total_steps"]
                 assert total_steps >= 1
                 for step_index in range(2, total_steps + 1):
