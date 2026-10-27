@@ -10,9 +10,16 @@ Status: **BLOCKED — isolated development evidence only.**
 - `crownpath/recovery.py` describes a recovery *procedure*, not evidence of a completed restoration.
 - `docs/payment_mfa_production_release_blockers.md` explicitly blocks live payment integration; payment MFA helpers remain experimental and isolated.
 
+## Backup restoration checkpoint — CI #738
+
+- CI #738 passed all four jobs on commit `b52ab90b8e3bc9f36ee33a5c6bc3b6713bc68eb3`.
+- `tests/test_disposable_sqlite_backup_restore.py` creates a synthetic learner and progress record in a temporary SQLite database, copies it through SQLite's online backup API into a second temporary database, checks `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, and verifies the restored records.
+- **Scope limitation:** This proves a disposable SQLite backup/restore path under CI. It does not test a real CrownPath production backup, production PostgreSQL restore, disaster recovery timing, backup encryption, retention, or operational approval.
+- **Release flag remains unverified:** Do not set `CROWNPATH_BACKUP_RESTORE_VERIFIED=true` on the basis of this isolated test.
+
 ## Outstanding release gates
 
-1. **Backup restore evidence:** Restore a sanitized backup into a disposable environment, validate integrity and migration compatibility, record evidence and reviewer approval. Never restore over production.
+1. **Backup restore evidence:** Perform an independently reviewed, non-production restoration of a representative production-format backup (sanitized as appropriate), validate integrity and migration compatibility, record recovery time and evidence, and obtain reviewer approval. Never restore over production.
 2. **Production configuration evidence:** Verify HTTPS, secure cookie behavior, managed secret configuration, database connectivity, and disabled demo features without exposing secret values.
 3. **Security assessment:** Review account recovery, MFA step-up, rate limiting, audit logging, authorization, and operational incident response. CI success is not a substitute for an independent security review.
 4. **Payment integration:** Keep disabled pending server-side step-up MFA, CSRF/session binding, provider ownership verification, atomic updates, migrations, audit trail, and negative route-level tests.
