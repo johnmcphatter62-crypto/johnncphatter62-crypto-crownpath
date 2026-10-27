@@ -114,6 +114,13 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 # The Owner-only report must remain inaccessible after a fresh learner login.
                 resumed_owner_report = completing_learner.get("/api/owner/learner-progress")
                 assert resumed_owner_report.status_code in (401, 403), resumed_owner_report.text
+                # A fresh learner session must not inherit access to either Owner dashboard.
+                for private_dashboard in (
+                    "/api/owner/curriculum/progress-summary",
+                    "/api/owner/curriculum/completion-dashboard",
+                ):
+                    denied_on_relogin = completing_learner.get(private_dashboard)
+                    assert denied_on_relogin.status_code in (401, 403), denied_on_relogin.text
                 total_steps = opened.json()["lesson"]["total_steps"]
                 assert total_steps >= 1
                 for step_index in range(2, total_steps + 1):
