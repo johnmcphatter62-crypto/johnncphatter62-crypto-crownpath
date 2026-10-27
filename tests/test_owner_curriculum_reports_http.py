@@ -50,6 +50,15 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             # The rejected request must leave the learner's role unchanged.
             with Session(engine) as db:
                 assert db.get(User, "student-test").role == "COSMETOLOGY_PRO"
+            # A foreign Origin cannot deactivate a learner through the Owner API.
+            foreign_deactivation = client.patch(
+                "/api/owner/users/student-test/active",
+                json={"active": False},
+                headers={"Origin": "https://untrusted.example"},
+            )
+            assert foreign_deactivation.status_code == 403, foreign_deactivation.text
+            with Session(engine) as db:
+                assert db.get(User, "student-test").active is True
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
