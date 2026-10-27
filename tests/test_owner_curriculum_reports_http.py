@@ -172,6 +172,10 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert updated["overall_progress"] > 0
             assert updated["lessons"][0]["status"] == "COMPLETED"
             assert updated["lessons"][0]["progress"] == 100
+            # Owner reporting must never include password hashes or login secrets,
+            # including after the learner completes the curriculum lesson.
+            assert "password_hash" not in updated_report.text.lower()
+            assert "syntheticpassword!2026" not in updated_report.text.lower()
             assert updated_report.json()["read_only"] is True
             assert updated["lessons_total"] == learners[0]["lessons_total"]
             assert updated["overall_progress"] <= 100
