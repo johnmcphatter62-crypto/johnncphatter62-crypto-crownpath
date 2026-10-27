@@ -109,6 +109,24 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 assert reenable.status_code == 200, reenable.text
                 # Re-enabling must not resurrect the revoked session.
                 assert disabled_client.get("/api/auth/me").status_code == 401
+            # Logout must invalidate the issued session, including a replayed cookie.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as logout_client:
+                logout_login = logout_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert logout_login.status_code == 200, logout_login.text
+                old_cookie = logout_client.cookies.get("crownpath_session")
+                assert old_cookie
+                assert logout_client.get("/api/auth/me").status_code == 200
+                logout_response = logout_client.post("/api/auth/logout")
+                assert logout_response.status_code == 200, logout_response.text
+                assert logout_client.get("/api/auth/me").status_code == 401
+                replay = logout_client.get(
+                    "/api/auth/me", cookies={"crownpath_session": old_cookie}
+                )
+                assert replay.status_code == 401, replay.text
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
