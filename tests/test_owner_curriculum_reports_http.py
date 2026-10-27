@@ -31,6 +31,14 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 "email": "owner-reports@example.com",
                 "password": "SyntheticPassword!2026"})
             assert login.status_code == 200, login.text
+            # A cookie-authenticated Owner mutation must reject a foreign Origin.
+            cross_origin_mutation = client.post(
+                "/api/owner/curriculum/programs",
+                json={"title": "Synthetic Cross-Origin Program", "slug": "cross-origin-denied"},
+                headers={"Origin": "https://untrusted.example"},
+            )
+            assert cross_origin_mutation.status_code == 403, cross_origin_mutation.text
+            assert "cross-origin" in cross_origin_mutation.text.lower()
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
