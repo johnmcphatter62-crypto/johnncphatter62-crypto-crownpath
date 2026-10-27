@@ -59,6 +59,14 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
             assert foreign_deactivation.status_code == 403, foreign_deactivation.text
             with Session(engine) as db:
                 assert db.get(User, "student-test").active is True
+            # The Owner account itself cannot be deactivated through staff controls.
+            owner_deactivation = client.patch(
+                "/api/owner/users/owner-test/active",
+                json={"active": False},
+            )
+            assert owner_deactivation.status_code == 400, owner_deactivation.text
+            with Session(engine) as db:
+                assert db.get(User, "owner-test").active is True
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
