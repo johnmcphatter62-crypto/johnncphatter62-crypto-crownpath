@@ -87,6 +87,28 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                     json={"role": "COSMETOLOGY_PRO"},
                 )
                 assert restore_role.status_code == 200, restore_role.text
+            # Disabling an account must revoke its already-issued session.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as disabled_client:
+                disabled_login = disabled_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert disabled_login.status_code == 200, disabled_login.text
+                assert disabled_client.get("/api/auth/me").status_code == 200
+                disable = client.patch(
+                    "/api/owner/users/student-test/active",
+                    json={"active": False},
+                )
+                assert disable.status_code == 200, disable.text
+                assert disabled_client.get("/api/auth/me").status_code == 401
+                reenable = client.patch(
+                    "/api/owner/users/student-test/active",
+                    json={"active": True},
+                )
+                assert reenable.status_code == 200, reenable.text
+                # Re-enabling must not resurrect the revoked session.
+                assert disabled_client.get("/api/auth/me").status_code == 401
             # A separate authenticated learner must not access Owner reports.
             with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
                 learner_login = learner_client.post("/api/auth/login", json={
