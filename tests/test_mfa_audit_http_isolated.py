@@ -44,7 +44,7 @@ def test_mfa_http_audit_records_exclude_codes(monkeypatch, tmp_path):
             challenge = login.json()["challenge"]
             assert login.json()["mfa_required"] is True
             failed = client.post("/api/auth/mfa/verify", json={
-                "challenge": challenge, "code": "not-a-valid-code",
+                "challenge": challenge, "code": "badcode",
             })
             assert failed.status_code == 401, failed.text
             valid_code = pyotp.TOTP(secret).now()
@@ -64,7 +64,7 @@ def test_mfa_http_audit_records_exclude_codes(monkeypatch, tmp_path):
                 for event in events
                 for name in ("action", "category", "result", "reason", "resource_id")
             )
-            for credential in (password, secret, valid_code, "not-a-valid-code", challenge):
+            for credential in (password, secret, valid_code, "badcode", challenge):
                 assert credential not in fields
     finally:
         engine.dispose()
