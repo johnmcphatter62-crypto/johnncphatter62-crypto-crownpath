@@ -26,7 +26,7 @@ def test_login_audit_success_failure_and_lockout_without_credentials(monkeypatch
             db.add(User(
                 user_id="synthetic-owner-audit",
                 name="Synthetic Audit Owner",
-                email="audit-owner@example.invalid",
+                email="audit-owner@example.com",
                 password_hash=auth.hash_password(secret),
                 role="OWNER",
                 active=True,
@@ -35,17 +35,17 @@ def test_login_audit_success_failure_and_lockout_without_credentials(monkeypatch
             db.commit()
         with TestClient(main.app, headers={"Origin": "http://testserver"}) as client:
             ok = client.post("/api/auth/login", json={
-                "email": "audit-owner@example.invalid", "password": secret,
+                "email": "audit-owner@example.com", "password": secret,
             })
             assert ok.status_code == 200, ok.text
             for _ in range(auth.MAX_FAILED_ATTEMPTS):
                 bad = client.post("/api/auth/login", json={
-                    "email": "audit-owner@example.invalid",
+                    "email": "audit-owner@example.com",
                     "password": "WrongSyntheticPassword!",
                 })
                 assert bad.status_code == 401, bad.text
             locked = client.post("/api/auth/login", json={
-                "email": "audit-owner@example.invalid", "password": secret,
+                "email": "audit-owner@example.com", "password": secret,
             })
             assert locked.status_code == 423, locked.text
         with Session(engine) as db:
