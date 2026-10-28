@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
 from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
+from crownpath.audit import record_audit
 from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
@@ -219,12 +220,20 @@ def owner_activation(payload:OwnerActivateRequest,response:Response):
 @app.post("/api/auth/login")
 def login(payload:LoginRequest,response:Response):
     user,status=authenticate(str(payload.email),payload.password)
-    if status=="LOCKED": raise HTTPException(423,"Account temporarily locked.")
-    if not user: raise HTTPException(401,"Invalid sign-in.")
-    if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
+    if status=="LOCKED":
+        record_audit(None,"LOGIN_LOCKED","SECURITY","DENIED")
+        raise HTTPException(423,"Account temporarily locked.")
+    if not user:
+        record_audit(None,"LOGIN_FAILED","SECURITY","DENIED")
+        raise HTTPException(401,"Invalid sign-in.")
+    if not role_access_approved(user["role"]):
+        record_audit(user["user_id"],"LOGIN_ROLE_BLOCKED","SECURITY","DENIED")
+        raise HTTPException(403,"This account is not open during owner testing.")
     if user["mfa_enabled"]:
+        record_audit(user["user_id"],"MFA_CHALLENGE_ISSUED","SECURITY","PENDING")
         return {"authenticated":False,"mfa_required":True,"challenge":create_mfa_challenge(user["user_id"])}
     token=create_access_token(user["user_id"])
+    record_audit(user["user_id"],"LOGIN_SUCCESS","SECURITY","SUCCESS")
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(user)}
 
@@ -232,10 +241,17 @@ def login(payload:LoginRequest,response:Response):
 def mfa_verify(payload:MfaVerifyRequest,response:Response):
     user_id=decode_mfa_challenge(payload.challenge)
     user=get_user_by_id(user_id) if user_id else None
-    if not user or not user["active"] or not user["mfa_enabled"]: raise HTTPException(401,"MFA challenge is invalid or expired.")
-    if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
-    if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator or recovery code.")
+    if not user or not user["active"] or not user["mfa_enabled"]:
+        record_audit(None,"MFA_CHALLENGE_INVALID","SECURITY","DENIED")
+        raise HTTPException(401,"MFA challenge is invalid or expired.")
+    if not role_access_approved(user["role"]):
+        record_audit(user_id,"MFA_ROLE_BLOCKED","SECURITY","DENIED")
+        raise HTTPException(403,"This account is not open during owner testing.")
+    if not verify_mfa_code(user_id,payload.code.strip()):
+        record_audit(user_id,"MFA_VERIFY_FAILED","SECURITY","DENIED")
+        raise HTTPException(401,"Invalid authenticator or recovery code.")
     token=create_access_token(user_id)
+    record_audit(user_id,"MFA_VERIFY_SUCCESS","SECURITY","SUCCESS")
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(get_user_by_id(user_id))}
 
