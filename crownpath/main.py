@@ -434,11 +434,13 @@ def owner_users(user=Depends(require_permission("staff.manage"))): return {"user
 def owner_update_role(user_id:str,payload:RoleUpdateRequest,user=Depends(require_permission("staff.manage"))):
     try: updated=set_user_role(user_id,payload.role,payload.active)
     except ValueError as exc: raise HTTPException(400,str(exc))
+    record_audit(user["user_id"],"STAFF_ROLE_UPDATED","SECURITY","SUCCESS",resource_type="USER",resource_id=user_id)
     return {"user":public_user(updated)}
 @app.patch("/api/owner/users/{user_id}/active")
 def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(require_permission("staff.manage"))):
     try: updated=set_user_active(user_id,payload.active)
     except ValueError as exc: raise HTTPException(400,str(exc))
+    record_audit(user["user_id"],"STAFF_ACTIVE_UPDATED","SECURITY","SUCCESS",resource_type="USER",resource_id=user_id)
     return {"user":public_user(updated)}
 
 @app.get("/api/avatar/startup/{role}")
