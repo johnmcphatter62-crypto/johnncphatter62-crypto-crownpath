@@ -22,3 +22,22 @@ def set_course_assignment_active(
     assignment.active = bool(active)
     db.flush()
     return assignment
+
+
+def instructor_can_edit_course(
+    db: Session, *, instructor_user_id: str, course_id: str
+) -> bool:
+    """Fail closed unless the active instructor has an active course assignment."""
+    from sqlalchemy import select
+
+    instructor = db.get(User, instructor_user_id)
+    if instructor is None or not instructor.active or instructor.role != "INSTRUCTOR":
+        return False
+    assignment = db.scalar(
+        select(InstructorCourseAssignment).where(
+            InstructorCourseAssignment.instructor_user_id == instructor_user_id,
+            InstructorCourseAssignment.course_id == course_id,
+            InstructorCourseAssignment.active.is_(True),
+        )
+    )
+    return assignment is not None
