@@ -84,6 +84,11 @@ class CurriculumLessonVersionCreateRequest(BaseModel):
     lesson_id:str=Field(min_length=1,max_length=100)
     content_json:str=Field(min_length=2,max_length=100000)
     version:int=Field(default=1,ge=1)
+class InstructorDraftSubmitRequest(BaseModel):
+    lesson_id:str=Field(min_length=1,max_length=100)
+    content_json:str=Field(min_length=2,max_length=65536)
+    version:int=Field(ge=1)
+
 class CurriculumVersionApprovalRequest(BaseModel):
     version_id:str=Field(min_length=1,max_length=100)
 
@@ -529,6 +534,33 @@ def owner_curriculum_create_lesson(payload:CurriculumLessonCreateRequest,user=De
     except PermissionError as exc: raise HTTPException(403,str(exc))
     except ValueError as exc: raise HTTPException(400,str(exc))
     finally: db.close()
+
+@app.post("/api/instructor/curriculum/drafts")
+def instructor_submit_draft(payload:InstructorDraftSubmitRequest,user=Depends(require_permission("academy.manage_assigned"))):
+    """Assigned instructors may create unapproved drafts; never publish."""
+    from crownpath.instructor_drafts import create_instructor_unapproved_draft
+    if user["role"] != "INSTRUCTOR":
+        raise HTTPException(403,"Instructor role required.")
+    db=session()
+    try:
+        result=create_instructor_unapproved_draft(
+            db,instructor_user_id=user["user_id"],lesson_id=payload.lesson_id,
+            content_json=payload.content_json,version=payload.version,
+        )
+        db.commit()
+        return result
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(403,str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400,str(exc))
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
 
 @app.post("/api/owner/curriculum/lesson-versions")
 def owner_curriculum_create_lesson_version(payload:CurriculumLessonVersionCreateRequest,user=Depends(require_permission("academy.manage"))):
