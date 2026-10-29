@@ -274,10 +274,13 @@ def logout(request:Request, response:Response):
     token = request.cookies.get("crownpath_session")
     if token:
         try:
-            revoke_access_token(token)
+            user_id = decode_access_token(token)
+            revoked = revoke_access_token(token)
         except Exception:
             # A database failure must not be reported as successful revocation.
             raise HTTPException(503, "Logout could not be confirmed. Please retry.")
+        if revoked:
+            record_audit(user_id,"SESSION_LOGOUT","SECURITY","SUCCESS")
     response.delete_cookie("crownpath_session", path="/")
     return {"authenticated":False}
 
