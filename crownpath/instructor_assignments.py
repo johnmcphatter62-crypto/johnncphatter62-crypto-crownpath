@@ -41,3 +41,23 @@ def instructor_can_edit_course(
         )
     )
     return assignment is not None
+
+
+def instructor_can_edit_lesson(
+    db: Session, *, instructor_user_id: str, lesson_id: str
+) -> bool:
+    """Resolve the lesson's course server-side before checking assignment.
+
+    This does not authorize publishing or expose an instructor write route.
+    """
+    from crownpath.curriculum_models import CurriculumLesson, CurriculumUnit
+
+    lesson = db.get(CurriculumLesson, lesson_id)
+    if lesson is None or lesson.status != "DRAFT":
+        return False
+    unit = db.get(CurriculumUnit, lesson.unit_id)
+    if unit is None:
+        return False
+    return instructor_can_edit_course(
+        db, instructor_user_id=instructor_user_id, course_id=unit.course_id
+    )
