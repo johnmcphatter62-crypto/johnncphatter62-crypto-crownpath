@@ -1,4 +1,5 @@
 """Isolated instructor draft creation; no HTTP route or publishing capability."""
+import json
 import uuid
 
 from sqlalchemy import select
@@ -22,8 +23,16 @@ def create_instructor_unapproved_draft(
         raise PermissionError("Active assignment to a draft lesson required.")
     if version < 1:
         raise ValueError("Version must be 1 or greater.")
-    if not content_json.strip():
+    if not isinstance(content_json, str) or not content_json.strip():
         raise ValueError("Lesson content is required.")
+    if len(content_json.encode("utf-8")) > 65536:
+        raise ValueError("Lesson content exceeds the 64 KiB draft limit.")
+    try:
+        parsed = json.loads(content_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Lesson content must be valid JSON.") from exc
+    if not isinstance(parsed, dict) or not parsed:
+        raise ValueError("Lesson content must be a nonempty JSON object.")
     duplicate = db.scalar(
         select(CurriculumLessonVersion).where(
             CurriculumLessonVersion.lesson_id == lesson_id,
