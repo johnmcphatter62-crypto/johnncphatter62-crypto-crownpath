@@ -46,18 +46,27 @@ def instructor_can_edit_course(
 def instructor_can_edit_lesson(
     db: Session, *, instructor_user_id: str, lesson_id: str
 ) -> bool:
-    """Resolve the lesson's course server-side before checking assignment.
-
-    This does not authorize publishing or expose an instructor write route.
-    """
-    from crownpath.curriculum_models import CurriculumLesson, CurriculumUnit
+    """Fail closed when a canonical lesson is shared across unassigned courses."""
+    from sqlalchemy import select
+    from crownpath.curriculum_models import (
+        CurriculumCourse, CurriculumLesson, CurriculumUnit, CurriculumUnitLesson,
+    )
 
     lesson = db.get(CurriculumLesson, lesson_id)
     if lesson is None or lesson.status != "DRAFT":
         return False
-    unit = db.get(CurriculumUnit, lesson.unit_id)
-    if unit is None:
-        return False
-    return instructor_can_edit_course(
-        db, instructor_user_id=instructor_user_id, course_id=unit.course_id
-    )
+    unit_ids = {lesson.unit_id}
+    unit_ids.update(db.scalars(
+        select(CurriculumUnitLesson.unit_id).where(
+            CurriculumUnitLesson.lesson_id == lesson_id
+        )
+    ).all())
+    for unit_id in unit_ids:
+        unit = db.get(CurriculumUnit, unit_id)
+        if unit is None or db.get(CurriculumCourse, unit.course_id) is None:
+            return False
+        if not instructor_can_edit_course(
+            db, instructor_user_id=instructor_user_id, course_id=unit.course_id
+        ):
+            return False
+    return True
