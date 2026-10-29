@@ -76,6 +76,29 @@ class ResourceAssignment(Base):
     access_level: Mapped[str]=mapped_column(String(20),nullable=False,default="VIEW")
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,default=now_utc)
 
+class InstructorCourseAssignment(Base):
+    """Owner-controlled course assignment; not itself permission to publish."""
+    __tablename__ = "instructor_course_assignments"
+    __table_args__ = (
+        UniqueConstraint("instructor_user_id", "course_id", name="uq_instructor_course_assignment"),
+    )
+    assignment_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    instructor_user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.user_id"), nullable=False, index=True
+    )
+    course_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    assigned_by_user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.user_id"), nullable=False
+    )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=now_utc
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=now_utc, onupdate=now_utc
+    )
+
+
 class AuditEvent(Base):
     __tablename__="audit_events"
     audit_id: Mapped[int]=mapped_column(Integer,primary_key=True,autoincrement=True)
