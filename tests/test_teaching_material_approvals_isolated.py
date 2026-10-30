@@ -75,6 +75,10 @@ def test_owner_approval_is_explicit_and_instructor_denied(tmp_path):
             ).all()
             assert len(events) == 1
             assert events[0].user_id == "owner"
+            assert events[0].category == "curriculum"
+            assert events[0].resource_type == "teaching_material_version"
+            assert events[0].resource_id == "version"
+            assert events[0].reason == "Explicit Owner approval of unapproved material metadata"
             assert events[0].created_at is not None
             with pytest.raises(ValueError):
                 owner_approve_teaching_material_version(
