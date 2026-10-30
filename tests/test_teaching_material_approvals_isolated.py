@@ -93,6 +93,23 @@ def test_owner_approval_is_explicit_and_instructor_denied(tmp_path):
                 owner_approve_teaching_material_version(
                     db, actor_user_id="owner", version_id="version"
                 )
+            # A disabled Owner must also be denied for a fresh, unapproved version.
+            db.add(TeachingMaterialVersion(
+                version_id="disabled-owner-version", material_id="material",
+                version=2, submitted_by_user_id="instructor",
+                storage_key="synthetic/material/v2", sha256_hex="f" * 64,
+                byte_size=12, media_type="application/pdf", approved=False,
+            ))
+            db.flush()
+            with pytest.raises(PermissionError):
+                owner_approve_teaching_material_version(
+                    db, actor_user_id="owner", version_id="disabled-owner-version"
+                )
+            assert db.get(TeachingMaterialVersion, "disabled-owner-version").approved is False
+            assert db.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve",
+                resource_id="disabled-owner-version",
+            ).count() == 0
             assert db.query(AuditEvent).filter_by(
                 action="teaching_material.version.approve"
             ).count() == 1
