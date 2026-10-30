@@ -52,6 +52,21 @@ def test_owner_approval_is_explicit_and_instructor_denied(tmp_path):
                 owner_approve_teaching_material_version(
                     db, actor_user_id="instructor", version_id="version"
                 )
+            # Unknown identities cannot approve or create success audit entries.
+            with pytest.raises(PermissionError):
+                owner_approve_teaching_material_version(
+                    db, actor_user_id="unknown-user", version_id="version"
+                )
+            db.add(User(
+                user_id="learner", name="Learner",
+                email="approval-learner@example.com", password_hash="synthetic",
+                role="LEARNER", active=True,
+            ))
+            db.flush()
+            with pytest.raises(PermissionError):
+                owner_approve_teaching_material_version(
+                    db, actor_user_id="learner", version_id="version"
+                )
             assert db.get(TeachingMaterialVersion, "version").approved is False
             assert db.query(AuditEvent).filter_by(
                 action="teaching_material.version.approve"
