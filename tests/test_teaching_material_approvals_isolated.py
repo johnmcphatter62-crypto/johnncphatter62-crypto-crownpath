@@ -122,6 +122,7 @@ def test_owner_approval_is_explicit_and_instructor_denied(tmp_path):
                     db, actor_user_id="owner", version_id="disabled-owner-version"
                 )
             assert db.get(TeachingMaterialVersion, "disabled-owner-version").approved is False
+            assert db.get(TeachingMaterialVersion, "disabled-owner-version").approved_by_user_id is None
             assert db.query(AuditEvent).filter_by(
                 action="teaching_material.version.approve",
                 resource_id="disabled-owner-version",
