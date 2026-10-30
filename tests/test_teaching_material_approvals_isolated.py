@@ -50,6 +50,16 @@ def test_owner_approval_is_explicit_and_instructor_denied(tmp_path):
                     db, actor_user_id="instructor", version_id="version"
                 )
             assert db.get(TeachingMaterialVersion, "version").approved is False
+            assert db.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve"
+            ).count() == 0
+            with pytest.raises(PermissionError):
+                owner_approve_teaching_material_version(
+                    db, actor_user_id="instructor", version_id="nonexistent"
+                )
+            assert db.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve"
+            ).count() == 0
             result = owner_approve_teaching_material_version(
                 db, actor_user_id="owner", version_id="version"
             )
@@ -67,11 +77,18 @@ def test_owner_approval_is_explicit_and_instructor_denied(tmp_path):
                 owner_approve_teaching_material_version(
                     db, actor_user_id="owner", version_id="version"
                 )
+            assert db.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve"
+            ).count() == 1
             db.get(User, "owner").active = False
             db.flush()
             with pytest.raises(PermissionError):
                 owner_approve_teaching_material_version(
                     db, actor_user_id="owner", version_id="version"
                 )
+            assert db.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve"
+            ).count() == 1
+            assert db.get(TeachingMaterialVersion, "version").approved_by_user_id == "owner"
     finally:
         engine.dispose()
