@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from crownpath.db_engine import Base
-from crownpath.models import User
+from crownpath.models import User, AuditEvent
 from crownpath.curriculum_models import (
     CurriculumProgram, CurriculumCourse, CurriculumUnit, CurriculumLesson,
 )
@@ -56,6 +56,13 @@ def test_owner_approval_is_explicit_and_instructor_denied(tmp_path):
             assert result["approved"] is True
             assert result["approved_by_user_id"] == "owner"
             db.commit()
+            events = db.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve",
+                resource_id="version", result="SUCCESS",
+            ).all()
+            assert len(events) == 1
+            assert events[0].user_id == "owner"
+            assert events[0].created_at is not None
             with pytest.raises(ValueError):
                 owner_approve_teaching_material_version(
                     db, actor_user_id="owner", version_id="version"
