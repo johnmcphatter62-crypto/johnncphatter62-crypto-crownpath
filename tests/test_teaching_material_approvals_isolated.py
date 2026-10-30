@@ -210,3 +210,65 @@ def test_approval_retry_after_rollback_creates_only_one_success_event(tmp_path):
             assert events[0].user_id == "retry-owner"
     finally:
         engine.dispose()
+
+
+def test_two_sessions_cannot_both_approve_same_version(tmp_path):
+    """Sequential competing sessions must produce only one successful audit."""
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'competing_approval.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as setup:
+            setup.add_all([
+                User(user_id="compete-owner", name="Owner",
+                     email="compete-owner@example.com", password_hash="synthetic",
+                     role="OWNER", active=True),
+                User(user_id="compete-instructor", name="Instructor",
+                     email="compete-instructor@example.com",
+                     password_hash="synthetic", role="INSTRUCTOR", active=True),
+                CurriculumProgram(program_id="compete-program", title="Program",
+                                  slug="compete-program"),
+                CurriculumCourse(course_id="compete-course",
+                                 program_id="compete-program", title="Course",
+                                 slug="compete-course"),
+                CurriculumUnit(unit_id="compete-unit", course_id="compete-course",
+                               title="Unit"),
+                CurriculumLesson(lesson_id="compete-lesson", unit_id="compete-unit",
+                                 title="Lesson", status="DRAFT"),
+                TeachingMaterial(material_id="compete-material",
+                                 lesson_id="compete-lesson",
+                                 created_by_user_id="compete-instructor",
+                                 title="Competing material"),
+                TeachingMaterialVersion(version_id="compete-version",
+                    material_id="compete-material", version=1,
+                    submitted_by_user_id="compete-instructor",
+                    storage_key="synthetic/compete/v1", sha256_hex="d" * 64,
+                    byte_size=12, media_type="application/pdf", approved=False),
+            ])
+            setup.commit()
+        with Session(engine) as first, Session(engine) as second:
+            # Both sessions initially observe the same unapproved version.
+            assert first.get(TeachingMaterialVersion, "compete-version").approved is False
+            assert second.get(TeachingMaterialVersion, "compete-version").approved is False
+            owner_approve_teaching_material_version(
+                first, actor_user_id="compete-owner", version_id="compete-version"
+            )
+            first.commit()
+            with pytest.raises(ValueError):
+                owner_approve_teaching_material_version(
+                    second, actor_user_id="compete-owner", version_id="compete-version"
+                )
+            second.rollback()
+        with Session(engine) as verify:
+            record = verify.get(TeachingMaterialVersion, "compete-version")
+            assert record.approved is True
+            assert record.approved_by_user_id == "compete-owner"
+            events = verify.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve",
+                resource_id="compete-version", result="SUCCESS",
+            ).all()
+            assert len(events) == 1
+    finally:
+        engine.dispose()
