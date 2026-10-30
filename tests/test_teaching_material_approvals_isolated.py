@@ -149,3 +149,64 @@ def test_owner_approval_and_audit_roll_back_together(tmp_path):
             ).count() == 0
     finally:
         engine.dispose()
+
+
+def test_approval_retry_after_rollback_creates_only_one_success_event(tmp_path):
+    """A rolled-back attempt may be retried without duplicate audit success."""
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'approval_retry.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as db:
+            db.add_all([
+                User(user_id="retry-owner", name="Owner",
+                     email="retry-owner@example.com", password_hash="synthetic",
+                     role="OWNER", active=True),
+                User(user_id="retry-instructor", name="Instructor",
+                     email="retry-instructor@example.com", password_hash="synthetic",
+                     role="INSTRUCTOR", active=True),
+                CurriculumProgram(program_id="retry-program", title="Program",
+                                  slug="retry-program"),
+                CurriculumCourse(course_id="retry-course",
+                                 program_id="retry-program", title="Course",
+                                 slug="retry-course"),
+                CurriculumUnit(unit_id="retry-unit", course_id="retry-course",
+                               title="Unit"),
+                CurriculumLesson(lesson_id="retry-lesson", unit_id="retry-unit",
+                                 title="Lesson", status="DRAFT"),
+                TeachingMaterial(material_id="retry-material",
+                                 lesson_id="retry-lesson",
+                                 created_by_user_id="retry-instructor",
+                                 title="Retry material"),
+                TeachingMaterialVersion(version_id="retry-version",
+                    material_id="retry-material", version=1,
+                    submitted_by_user_id="retry-instructor",
+                    storage_key="synthetic/retry/v1", sha256_hex="c" * 64,
+                    byte_size=12, media_type="application/pdf", approved=False),
+            ])
+            db.commit()
+            owner_approve_teaching_material_version(
+                db, actor_user_id="retry-owner", version_id="retry-version"
+            )
+            db.rollback()
+            result = owner_approve_teaching_material_version(
+                db, actor_user_id="retry-owner", version_id="retry-version"
+            )
+            assert result["approved"] is True
+            db.commit()
+            with pytest.raises(ValueError):
+                owner_approve_teaching_material_version(
+                    db, actor_user_id="retry-owner", version_id="retry-version"
+                )
+        with Session(engine) as verify:
+            assert verify.get(TeachingMaterialVersion, "retry-version").approved is True
+            events = verify.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve",
+                resource_id="retry-version", result="SUCCESS",
+            ).all()
+            assert len(events) == 1
+            assert events[0].user_id == "retry-owner"
+    finally:
+        engine.dispose()
