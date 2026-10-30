@@ -1,5 +1,8 @@
 """Owner-only material approval tests using synthetic disposable SQLite."""
 import pytest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from sqlalchemy.exc import OperationalError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -268,6 +271,77 @@ def test_two_sessions_cannot_both_approve_same_version(tmp_path):
             events = verify.query(AuditEvent).filter_by(
                 action="teaching_material.version.approve",
                 resource_id="compete-version", result="SUCCESS",
+            ).all()
+            assert len(events) == 1
+    finally:
+        engine.dispose()
+
+
+def test_parallel_owner_approval_never_commits_two_success_events(tmp_path):
+    """Concurrent SQLite requests may contend, but never double-approve."""
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'parallel_approval.db'}",
+        connect_args={"check_same_thread": False, "timeout": 5},
+    )
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as setup:
+            setup.add_all([
+                User(user_id="parallel-owner", name="Owner",
+                     email="parallel-owner@example.com", password_hash="synthetic",
+                     role="OWNER", active=True),
+                User(user_id="parallel-instructor", name="Instructor",
+                     email="parallel-instructor@example.com",
+                     password_hash="synthetic", role="INSTRUCTOR", active=True),
+                CurriculumProgram(program_id="parallel-program", title="Program",
+                                  slug="parallel-program"),
+                CurriculumCourse(course_id="parallel-course",
+                                 program_id="parallel-program", title="Course",
+                                 slug="parallel-course"),
+                CurriculumUnit(unit_id="parallel-unit", course_id="parallel-course",
+                               title="Unit"),
+                CurriculumLesson(lesson_id="parallel-lesson", unit_id="parallel-unit",
+                                 title="Lesson", status="DRAFT"),
+                TeachingMaterial(material_id="parallel-material",
+                                 lesson_id="parallel-lesson",
+                                 created_by_user_id="parallel-instructor",
+                                 title="Parallel material"),
+                TeachingMaterialVersion(version_id="parallel-version",
+                    material_id="parallel-material", version=1,
+                    submitted_by_user_id="parallel-instructor",
+                    storage_key="synthetic/parallel/v1", sha256_hex="e" * 64,
+                    byte_size=12, media_type="application/pdf", approved=False),
+            ])
+            setup.commit()
+
+        gate = Barrier(2)
+
+        def attempt():
+            with Session(engine) as db:
+                gate.wait(timeout=10)
+                try:
+                    owner_approve_teaching_material_version(
+                        db, actor_user_id="parallel-owner",
+                        version_id="parallel-version"
+                    )
+                    db.commit()
+                    return "approved"
+                except (ValueError, OperationalError):
+                    db.rollback()
+                    return "rejected"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(attempt) for _ in range(2)]
+            results = [future.result(timeout=20) for future in futures]
+        assert results.count("approved") == 1
+        assert results.count("rejected") == 1
+        with Session(engine) as verify:
+            record = verify.get(TeachingMaterialVersion, "parallel-version")
+            assert record.approved is True
+            assert record.approved_by_user_id == "parallel-owner"
+            events = verify.query(AuditEvent).filter_by(
+                action="teaching_material.version.approve",
+                resource_id="parallel-version", result="SUCCESS",
             ).all()
             assert len(events) == 1
     finally:
