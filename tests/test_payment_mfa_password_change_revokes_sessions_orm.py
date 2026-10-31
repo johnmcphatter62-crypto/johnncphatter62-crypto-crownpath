@@ -41,6 +41,14 @@ def test_password_change_revokes_all_owner_sessions_but_not_other_user(tmp_path)
                 db.add(AuthToken(token_id=tid, user_id=uid, token_hash=_hash_jti(jti),
                                  token_type="SESSION", expires_at=now + timedelta(minutes=10),
                                  created_at=now))
+            # A non-session token for this Owner must not be consumed by
+            # the password-change session-revocation update.
+            db.add(AuthToken(
+                token_id="OWNER-A-VERIFY", user_id="owner-a",
+                token_hash=hashlib.sha256(b"synthetic-verification-token").hexdigest(),
+                token_type="EMAIL_VERIFY",
+                expires_at=now + timedelta(minutes=10), created_at=now,
+            ))
             db.commit()
 
         def active_session(uid, jti):
@@ -92,5 +100,12 @@ def test_password_change_revokes_all_owner_sessions_but_not_other_user(tmp_path)
         assert check(a1) is None
         assert check(a2) is None
         assert check(b1) == ("owner-b", "b-one")
+        with Session(engine) as db:
+            verification = db.get(AuthToken, "OWNER-A-VERIFY")
+            assert verification.token_type == "EMAIL_VERIFY"
+            assert verification.used_at is None
+            assert db.get(AuthToken, "SESSION-A1").used_at is not None
+            assert db.get(AuthToken, "SESSION-A2").used_at is not None
+            assert db.get(AuthToken, "SESSION-B1").used_at is None
     finally:
         engine.dispose()
