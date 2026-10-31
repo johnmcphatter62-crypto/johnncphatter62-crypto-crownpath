@@ -141,3 +141,37 @@ def test_payment_proof_cannot_cross_owner_identity_at_http_probe(tmp_path):
         assert provider_calls == ["simulated-config-change"]
     finally:
         engine.dispose()
+
+
+def test_payment_proof_rejected_for_wrong_purpose_at_http_probe(tmp_path):
+    """Payment-config proof must not authorize a different synthetic operation."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_wrong_purpose.db'}")
+    try:
+        create_test_schema(engine)
+        proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="synthetic-session",
+        )
+        app = FastAPI()
+        provider_calls = []
+        operation = {"purpose": "payments.refund"}
+
+        @app.post("/isolated/payment-purpose-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=proof, user_id="synthetic-owner",
+                session_id="synthetic-session", purpose=operation["purpose"],
+            ):
+                raise HTTPException(403, "Payment proof purpose mismatch")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-purpose-probe")
+            assert denied.status_code == 403
+            assert provider_calls == []
+            operation["purpose"] = "payments.configure"
+            allowed = client.post("/isolated/payment-purpose-probe")
+        assert allowed.status_code == 200
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
