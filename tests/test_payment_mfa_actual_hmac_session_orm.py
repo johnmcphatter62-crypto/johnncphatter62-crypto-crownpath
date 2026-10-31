@@ -107,5 +107,25 @@ def test_actual_orm_hmac_session_validation_and_revocation(tmp_path):
             owner.active = False
             db.commit()
         assert validate(replacement) is None
+
+        # A newly issued, otherwise-valid session must also fail after the
+        # Owner's role changes away from OWNER, even while account is active.
+        with Session(engine) as db:
+            owner = db.get(User, "owner-a")
+            owner.active = True
+            db.add(AuthToken(
+                token_id="HMAC-TEST-TOKEN-3", user_id="owner-a",
+                token_hash=_hash_session_id("owner-a-role-jti"),
+                token_type="SESSION", expires_at=now + timedelta(minutes=10),
+                created_at=now,
+            ))
+            db.commit()
+        role_token = signed(jti="owner-a-role-jti")
+        assert validate(role_token) == ("owner-a", "owner-a-role-jti")
+        with Session(engine) as db:
+            owner = db.get(User, "owner-a")
+            owner.role = "LEARNER"
+            db.commit()
+        assert validate(role_token) is None
     finally:
         engine.dispose()
