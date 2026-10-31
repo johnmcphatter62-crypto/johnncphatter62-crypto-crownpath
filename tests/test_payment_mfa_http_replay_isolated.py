@@ -607,3 +607,56 @@ def test_concurrent_requests_consume_one_payment_proof_only_once(tmp_path):
         assert not consume_proof(engine, token=proof, user_id=owner, session_id=session)
     finally:
         engine.dispose()
+
+
+def test_concurrent_revocation_and_requests_allow_at_most_one_change(tmp_path):
+    """Racing revocation and HTTP requests cannot duplicate a proof's use."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'http_revocation_race.db'}",
+        connect_args={"timeout": 10},
+    )
+    try:
+        create_test_schema(engine)
+        owner, session = "synthetic-owner", "synthetic-session"
+        proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        app = FastAPI()
+        provider_calls = []
+
+        @app.post("/isolated/payment-revocation-race-probe")
+        def probe():
+            if not consume_proof(engine, token=proof, user_id=owner, session_id=session):
+                raise HTTPException(403, "Payment proof unavailable")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        barrier = Barrier(3)
+
+        def request_once():
+            barrier.wait(timeout=10)
+            with TestClient(app) as client:
+                return client.post("/isolated/payment-revocation-race-probe").status_code
+
+        def revoke_once():
+            barrier.wait(timeout=10)
+            return revoke_session_proofs(engine, user_id=owner, session_id=session)
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            first = pool.submit(request_once)
+            second = pool.submit(request_once)
+            revocation = pool.submit(revoke_once)
+            results = [first.result(), second.result()]
+            revoked_count = revocation.result()
+        # If revocation wins, neither request succeeds; otherwise exactly one may.
+        assert all(status in (200, 403) for status in results)
+        assert results.count(200) <= 1
+        assert results.count(403) >= 1
+        assert len(provider_calls) == results.count(200)
+        assert revoked_count in (0, 1)
+        with TestClient(app) as client:
+            assert client.post("/isolated/payment-revocation-race-probe").status_code == 403
+        assert not consume_proof(engine, token=proof, user_id=owner, session_id=session)
+    finally:
+        engine.dispose()
