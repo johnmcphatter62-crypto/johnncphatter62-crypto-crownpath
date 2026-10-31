@@ -790,3 +790,43 @@ def test_revoked_owner_proof_cannot_transfer_to_another_active_owner(tmp_path):
         assert provider_calls == [owner_b]
     finally:
         engine.dispose()
+
+
+def test_owner_revocation_does_not_cross_shared_session_identifier(tmp_path):
+    """Identical session labels across owners must not share revocation scope."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_shared_session_label.db'}")
+    try:
+        create_test_schema(engine)
+        owner_a, owner_b = "synthetic-owner-a", "synthetic-owner-b"
+        shared_session = "same-session-label"
+        proof_a = issue_verified_proof(engine, user_id=owner_a, session_id=shared_session)
+        proof_b = issue_verified_proof(engine, user_id=owner_b, session_id=shared_session)
+        assert revoke_session_proofs(
+            engine, user_id=owner_a, session_id=shared_session,
+        ) == 1
+        app = FastAPI()
+        provider_calls = []
+        scope = {"owner": owner_a, "proof": proof_a}
+
+        @app.post("/isolated/payment-shared-session-label-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=scope["proof"], user_id=scope["owner"],
+                session_id=shared_session,
+            ):
+                raise HTTPException(403, "Payment proof revoked or mismatched")
+            provider_calls.append(scope["owner"])
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            assert client.post("/isolated/payment-shared-session-label-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(owner=owner_b)
+            assert client.post("/isolated/payment-shared-session-label-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(proof=proof_b)
+            assert client.post("/isolated/payment-shared-session-label-probe").status_code == 200
+            assert client.post("/isolated/payment-shared-session-label-probe").status_code == 403
+        assert provider_calls == [owner_b]
+    finally:
+        engine.dispose()
