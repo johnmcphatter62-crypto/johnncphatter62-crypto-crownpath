@@ -368,3 +368,47 @@ def test_disabled_owner_cannot_use_previously_issued_proof_at_http_probe(tmp_pat
         ) is True
     finally:
         engine.dispose()
+
+
+def test_disabled_then_reenabled_owner_cannot_reuse_old_payment_proofs(tmp_path):
+    """Simulated deactivation revokes both sessions; reactivation cannot revive proofs."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_owner_reenabled.db'}")
+    try:
+        create_test_schema(engine)
+        owner = "synthetic-owner"
+        sessions = ("synthetic-session-a", "synthetic-session-b")
+        proofs = {
+            session: issue_verified_proof(engine, user_id=owner, session_id=session)
+            for session in sessions
+        }
+        account = {"active": True}
+        # Isolated deactivation workflow: change account state and revoke each
+        # known session's proof. Production account hooks are not wired here.
+        account["active"] = False
+        assert sum(
+            revoke_session_proofs(engine, user_id=owner, session_id=session)
+            for session in sessions
+        ) == 2
+        account["active"] = True  # Simulate later account restoration.
+        app = FastAPI()
+        provider_calls = []
+
+        @app.post("/isolated/payment-reactivated-owner-probe/{session}")
+        def probe(session: str):
+            if session not in proofs or not account["active"]:
+                raise HTTPException(403, "Owner access denied")
+            if not consume_proof(
+                engine, token=proofs[session], user_id=owner, session_id=session,
+            ):
+                raise HTTPException(403, "Payment proof revoked")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            for session in sessions:
+                assert client.post(
+                    f"/isolated/payment-reactivated-owner-probe/{session}"
+                ).status_code == 403
+        assert provider_calls == []
+    finally:
+        engine.dispose()
