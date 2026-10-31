@@ -568,3 +568,42 @@ def test_new_session_requires_new_proof_after_second_revocation(tmp_path):
         assert not consume_proof(engine, token=first_proof, user_id=owner, session_id=old_session)
     finally:
         engine.dispose()
+
+
+def test_concurrent_requests_consume_one_payment_proof_only_once(tmp_path):
+    """Concurrent HTTP requests cannot both consume the same SQLite proof."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'http_concurrent_proof.db'}",
+        connect_args={"timeout": 10},
+    )
+    try:
+        create_test_schema(engine)
+        owner, session = "synthetic-owner", "synthetic-session"
+        proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        app = FastAPI()
+        provider_calls = []
+
+        @app.post("/isolated/payment-concurrent-proof-probe")
+        def probe():
+            if not consume_proof(engine, token=proof, user_id=owner, session_id=session):
+                raise HTTPException(403, "Payment proof already consumed")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        barrier = Barrier(2)
+
+        def request_once():
+            barrier.wait(timeout=10)
+            with TestClient(app) as client:
+                return client.post("/isolated/payment-concurrent-proof-probe").status_code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: request_once(), range(2)))
+        assert sorted(results) == [200, 403]
+        assert provider_calls == ["simulated-config-change"]
+        assert not consume_proof(engine, token=proof, user_id=owner, session_id=session)
+    finally:
+        engine.dispose()
