@@ -886,3 +886,58 @@ def test_simultaneous_owner_session_revocations_remain_isolated(tmp_path):
         assert provider_calls == [owner_a, owner_b]
     finally:
         engine.dispose()
+
+
+def test_repeated_concurrent_revocations_are_idempotent_and_session_scoped(tmp_path):
+    """Only one concurrent revocation consumes proofs; sibling session survives."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'http_repeat_revoke.db'}",
+        connect_args={"timeout": 10},
+    )
+    try:
+        create_test_schema(engine)
+        owner, revoked_session, sibling_session = (
+            "synthetic-owner", "revoked-session", "unaffected-session"
+        )
+        revoked_proofs = [
+            issue_verified_proof(engine, user_id=owner, session_id=revoked_session)
+            for _ in range(3)
+        ]
+        sibling_proof = issue_verified_proof(engine, user_id=owner, session_id=sibling_session)
+        barrier = Barrier(3)
+
+        def revoke_once():
+            barrier.wait(timeout=10)
+            return revoke_session_proofs(engine, user_id=owner, session_id=revoked_session)
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            counts = list(pool.map(lambda _: revoke_once(), range(3)))
+        assert sorted(counts) == [0, 0, len(revoked_proofs)]
+        app = FastAPI()
+        provider_calls = []
+        scope = {"proof": revoked_proofs[0], "session": revoked_session}
+
+        @app.post("/isolated/payment-repeat-revocation-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=scope["proof"], user_id=owner,
+                session_id=scope["session"],
+            ):
+                raise HTTPException(403, "Payment proof revoked or used")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            for revoked_proof in revoked_proofs:
+                scope.update(proof=revoked_proof, session=revoked_session)
+                assert client.post("/isolated/payment-repeat-revocation-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(proof=sibling_proof, session=sibling_session)
+            assert client.post("/isolated/payment-repeat-revocation-probe").status_code == 200
+            assert client.post("/isolated/payment-repeat-revocation-probe").status_code == 403
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
