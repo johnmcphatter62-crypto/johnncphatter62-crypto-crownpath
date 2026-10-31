@@ -1,0 +1,434 @@
+"""Owner-only HTTP curriculum reporting in an isolated SQLite test."""
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+import crownpath.auth as auth
+import crownpath.main as main
+from crownpath.db_engine import Base
+from crownpath.models import User
+
+
+def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'owner_reports.db'}",
+                           connect_args={"check_same_thread": False})
+    try:
+        Base.metadata.create_all(engine)
+        monkeypatch.setattr(auth, "session", lambda: Session(engine))
+        monkeypatch.setattr(main, "session", lambda: Session(engine))
+        monkeypatch.setattr(auth, "SECRET_KEY", "isolated-owner-report-test-key")
+        with Session(engine) as db:
+            db.add(User(user_id="owner-test", name="Synthetic Owner",
+                        email="owner-reports@example.com",
+                        password_hash=auth.hash_password("SyntheticPassword!2026"),
+                        role="OWNER", active=True, mfa_enabled=False))
+            db.add(User(user_id="student-test", name="Synthetic Student",
+                        email="student-report@example.com",
+                        password_hash=auth.hash_password("SyntheticPassword!2026"),
+                        role="COSMETOLOGY_PRO", active=True, mfa_enabled=False))
+            db.commit()
+        with TestClient(main.app, headers={"Origin": "http://testserver"}) as client:
+            login = client.post("/api/auth/login", json={
+                "email": "owner-reports@example.com",
+                "password": "SyntheticPassword!2026"})
+            assert login.status_code == 200, login.text
+            # A cookie-authenticated Owner mutation must reject a foreign Origin.
+            cross_origin_mutation = client.post(
+                "/api/owner/curriculum/programs",
+                json={"title": "Synthetic Cross-Origin Program", "slug": "cross-origin-denied"},
+                headers={"Origin": "https://untrusted.example"},
+            )
+            assert cross_origin_mutation.status_code == 403, cross_origin_mutation.text
+            assert "cross-origin" in cross_origin_mutation.text.lower()
+            # A foreign website must not be able to change staff account roles
+            # using an authenticated Owner's session cookie.
+            foreign_role_change = client.patch(
+                "/api/owner/users/student-test/role",
+                json={"role": "INSTRUCTOR"},
+                headers={"Origin": "https://untrusted.example"},
+            )
+            assert foreign_role_change.status_code == 403, foreign_role_change.text
+            # The rejected request must leave the learner's role unchanged.
+            with Session(engine) as db:
+                assert db.get(User, "student-test").role == "COSMETOLOGY_PRO"
+            # A foreign Origin cannot deactivate a learner through the Owner API.
+            foreign_deactivation = client.patch(
+                "/api/owner/users/student-test/active",
+                json={"active": False},
+                headers={"Origin": "https://untrusted.example"},
+            )
+            assert foreign_deactivation.status_code == 403, foreign_deactivation.text
+            with Session(engine) as db:
+                assert db.get(User, "student-test").active is True
+            # The Owner account itself cannot be deactivated through staff controls.
+            owner_deactivation = client.patch(
+                "/api/owner/users/owner-test/active",
+                json={"active": False},
+            )
+            assert owner_deactivation.status_code == 400, owner_deactivation.text
+            with Session(engine) as db:
+                assert db.get(User, "owner-test").active is True
+            # Changing a learner's role must revoke any existing login session.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as revoked_client:
+                revoked_login = revoked_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert revoked_login.status_code == 200, revoked_login.text
+                assert revoked_client.get("/api/auth/me").status_code == 200
+                role_update = client.patch(
+                    "/api/owner/users/student-test/role",
+                    json={"role": "BARBER"},
+                )
+                assert role_update.status_code == 200, role_update.text
+                assert revoked_client.get("/api/auth/me").status_code == 401
+                restore_role = client.patch(
+                    "/api/owner/users/student-test/role",
+                    json={"role": "COSMETOLOGY_PRO"},
+                )
+                assert restore_role.status_code == 200, restore_role.text
+            # Disabling an account must revoke its already-issued session.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as disabled_client:
+                disabled_login = disabled_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert disabled_login.status_code == 200, disabled_login.text
+                assert disabled_client.get("/api/auth/me").status_code == 200
+                disable = client.patch(
+                    "/api/owner/users/student-test/active",
+                    json={"active": False},
+                )
+                assert disable.status_code == 200, disable.text
+                assert disabled_client.get("/api/auth/me").status_code == 401
+                reenable = client.patch(
+                    "/api/owner/users/student-test/active",
+                    json={"active": True},
+                )
+                assert reenable.status_code == 200, reenable.text
+                # Re-enabling must not resurrect the revoked session.
+                assert disabled_client.get("/api/auth/me").status_code == 401
+            # Logout must invalidate the issued session, including a replayed cookie.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as logout_client:
+                logout_login = logout_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert logout_login.status_code == 200, logout_login.text
+                old_cookie = logout_client.cookies.get("crownpath_session")
+                assert old_cookie
+                assert logout_client.get("/api/auth/me").status_code == 200
+                logout_response = logout_client.post("/api/auth/logout")
+                assert logout_response.status_code == 200, logout_response.text
+                assert logout_client.get("/api/auth/me").status_code == 401
+                replay = logout_client.get(
+                    "/api/auth/me", cookies={"crownpath_session": old_cookie}
+                )
+                assert replay.status_code == 401, replay.text
+            # An expired server-side session must be rejected even if its
+            # signed cookie is still presented by the client.
+            from datetime import timedelta
+            from sqlalchemy import update
+            from crownpath.models import AuthToken
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as expiry_client:
+                expiry_login = expiry_client.post(
+                    "/api/auth/login",
+                    json={"email": "student-report@example.com",
+                          "password": "SyntheticPassword!2026"},
+                )
+                assert expiry_login.status_code == 200, expiry_login.text
+                assert expiry_client.get("/api/auth/me").status_code == 200
+                with Session(engine) as db:
+                    db.execute(
+                        update(AuthToken)
+                        .where(AuthToken.user_id == "student-test",
+                               AuthToken.token_type == "SESSION",
+                               AuthToken.used_at.is_(None))
+                        .values(expires_at=auth.now_utc() - timedelta(minutes=1))
+                    )
+                    db.commit()
+                assert expiry_client.get("/api/auth/me").status_code == 401
+            # A separate authenticated learner must not access Owner reports.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as learner_client:
+                learner_login = learner_client.post("/api/auth/login", json={
+                    "email": "student-report@example.com",
+                    "password": "SyntheticPassword!2026"})
+                assert learner_login.status_code == 200, learner_login.text
+                learner_me = learner_client.get("/api/auth/me")
+                assert learner_me.status_code == 200, learner_me.text
+                assert learner_me.json()["role"] == "COSMETOLOGY_PRO"
+                # Student cannot read other Owner-only curriculum summaries.
+                for protected_path in (
+                    "/api/owner/curriculum/progress-summary",
+                    "/api/owner/curriculum/completion-dashboard",
+                ):
+                    protected = learner_client.get(protected_path)
+                    assert protected.status_code in (401, 403), (protected_path, protected.text)
+                # Learner may read their own classroom dashboard, not Owner data.
+                dashboard = learner_client.get("/api/learner/dashboard")
+                assert dashboard.status_code == 200, dashboard.text
+                assert isinstance(dashboard.json()["modules"], list)
+                assert "overall_progress" in dashboard.json()
+                # A learner may open a curriculum lesson in their own session.
+                opened = learner_client.post("/api/learner/lessons/cosmetology-foundations/open")
+                assert opened.status_code == 200, opened.text
+                assert opened.json()["lesson"]["lesson_id"] == "cosmetology-foundations"
+                # Completing one real lesson step updates the learner progress API.
+                first_step = learner_client.post(
+                    "/api/learner/lessons/cosmetology-foundations/steps/1/complete")
+                assert first_step.status_code == 200, first_step.text
+                step_lesson = first_step.json()["lesson"]
+                assert 1 in step_lesson["completed_steps"]
+                assert step_lesson["progress"] > 0
+                # Completing the same step again must be idempotent.
+                repeated_step = learner_client.post(
+                    "/api/learner/lessons/cosmetology-foundations/steps/1/complete")
+                assert repeated_step.status_code == 200, repeated_step.text
+                assert repeated_step.json()["lesson"]["completed_steps"] == step_lesson["completed_steps"]
+                assert repeated_step.json()["lesson"]["progress"] == step_lesson["progress"]
+                # The classroom dashboard must reflect saved step progress.
+                updated_dashboard = learner_client.get("/api/learner/dashboard")
+                assert updated_dashboard.status_code == 200, updated_dashboard.text
+                assert updated_dashboard.json()["overall_progress"] > dashboard.json()["overall_progress"]
+                # Reject nonexistent lesson steps without changing saved progress.
+                invalid_step = learner_client.post(
+                    "/api/learner/lessons/cosmetology-foundations/steps/999/complete")
+                assert invalid_step.status_code == 404, invalid_step.text
+                unchanged_dashboard = learner_client.get("/api/learner/dashboard")
+                assert unchanged_dashboard.status_code == 200, unchanged_dashboard.text
+                assert unchanged_dashboard.json()["overall_progress"] == updated_dashboard.json()["overall_progress"]
+                private_report = learner_client.get("/api/owner/learner-progress")
+                assert private_report.status_code in (401, 403), private_report.text
+            # Owner access remains available after the separate learner login.
+            owner_me = client.get("/api/auth/me")
+            assert owner_me.status_code == 200, owner_me.text
+            assert owner_me.json()["role"] == "OWNER"
+            learner_report = client.get("/api/owner/learner-progress")
+            assert learner_report.status_code == 200, learner_report.text
+            # Read-only reporting must never disclose authentication credentials.
+            report_body = learner_report.text.lower()
+            assert "password_hash" not in report_body
+            assert "syntheticpassword!2026" not in report_body
+            assert learner_report.json()["read_only"] is True
+            learners = learner_report.json()["learners"]
+            assert len(learners) == 1
+            assert learners[0]["user_id"] == "student-test"
+            assert learners[0]["role"] == "COSMETOLOGY_PRO"
+            assert learners[0]["lessons_completed"] == 0
+            assert 0 < learners[0]["overall_progress"] < 100
+            assert learners[0]["lessons_total"] > 0
+            assert all(lesson["status"] in ("NOT_STARTED", "IN_PROGRESS") for lesson in learners[0]["lessons"])
+            assert any(lesson["status"] == "IN_PROGRESS" for lesson in learners[0]["lessons"])
+            # Finish the lesson through the real student API after checking partial progress.
+            with TestClient(main.app, headers={"Origin": "http://testserver"}) as completing_learner:
+                login_again = completing_learner.post("/api/auth/login", json={
+                    "email": "student-report@example.com",
+                    "password": "SyntheticPassword!2026"})
+                assert login_again.status_code == 200, login_again.text
+                # Progress saved in the first login must survive a fresh session.
+                resumed_dashboard = completing_learner.get("/api/learner/dashboard")
+                assert resumed_dashboard.status_code == 200, resumed_dashboard.text
+                assert (
+                    resumed_dashboard.json()["overall_progress"]
+                    == updated_dashboard.json()["overall_progress"]
+                )
+                # The Owner-only report must remain inaccessible after a fresh learner login.
+                resumed_owner_report = completing_learner.get("/api/owner/learner-progress")
+                assert resumed_owner_report.status_code in (401, 403), resumed_owner_report.text
+                # A fresh learner session must not inherit access to either Owner dashboard.
+                for private_dashboard in (
+                    "/api/owner/curriculum/progress-summary",
+                    "/api/owner/curriculum/completion-dashboard",
+                ):
+                    denied_on_relogin = completing_learner.get(private_dashboard)
+                    assert denied_on_relogin.status_code in (401, 403), denied_on_relogin.text
+                total_steps = opened.json()["lesson"]["total_steps"]
+                assert total_steps >= 1
+                for step_index in range(2, total_steps + 1):
+                    step_result = completing_learner.post(
+                        f"/api/learner/lessons/cosmetology-foundations/steps/{step_index}/complete")
+                    assert step_result.status_code == 200, step_result.text
+                # A repeat completion request must not add extra completed steps.
+                repeat_last = completing_learner.post(
+                    f"/api/learner/lessons/cosmetology-foundations/steps/{total_steps}/complete")
+                assert repeat_last.status_code == 200, repeat_last.text
+                assert repeat_last.json()["lesson"]["status"] == "COMPLETED"
+                assert repeat_last.json()["lesson"]["progress"] == 100
+                assert repeat_last.json()["lesson"]["completed_step_count"] == total_steps
+                # Completing the entire lesson again must remain idempotent.
+                repeat_lesson = completing_learner.post(
+                    "/api/learner/lessons/cosmetology-foundations/complete")
+                assert repeat_lesson.status_code == 200, repeat_lesson.text
+                assert repeat_lesson.json()["lesson"]["status"] == "COMPLETED"
+                assert repeat_lesson.json()["lesson"]["progress"] == 100
+                # A completed lesson must reject nonexistent steps without losing completion.
+                invalid_after_completion = completing_learner.post(
+                    "/api/learner/lessons/cosmetology-foundations/steps/999/complete")
+                assert invalid_after_completion.status_code == 404, invalid_after_completion.text
+                # The learner dashboard must retain the completed lesson across requests.
+                completion_dashboard = completing_learner.get("/api/learner/dashboard")
+                assert completion_dashboard.status_code == 200, completion_dashboard.text
+                assert completion_dashboard.json()["overall_progress"] > updated_dashboard.json()["overall_progress"]
+                # A learner must still be denied the Owner report after completing a lesson.
+                denied_after_completion = completing_learner.get("/api/owner/learner-progress")
+                assert denied_after_completion.status_code in (401, 403), denied_after_completion.text
+                # Completing a lesson must not unlock the Owner curriculum dashboards.
+                for owner_endpoint in (
+                    "/api/owner/curriculum/progress-summary",
+                    "/api/owner/curriculum/completion-dashboard",
+                ):
+                    denied = completing_learner.get(owner_endpoint)
+                    assert denied.status_code in (401, 403), denied.text
+                finished = completing_learner.get("/api/learner/dashboard")
+                assert finished.status_code == 200, finished.text
+                assert finished.json()["overall_progress"] >= updated_dashboard.json()["overall_progress"]
+            updated_report = client.get("/api/owner/learner-progress")
+            assert updated_report.status_code == 200, updated_report.text
+            updated = updated_report.json()["learners"][0]
+            assert updated["lessons_completed"] == 1
+            assert updated["overall_progress"] > 0
+            assert updated["lessons"][0]["status"] == "COMPLETED"
+            assert updated["lessons"][0]["progress"] == 100
+            # Owner reporting must never include password hashes or login secrets,
+            # including after the learner completes the curriculum lesson.
+            assert "password_hash" not in updated_report.text.lower()
+            assert "syntheticpassword!2026" not in updated_report.text.lower()
+            # The Owner's completion report must not accidentally include
+            # unrelated learner accounts or duplicate the completed learner.
+            assert len(updated_report.json()["learners"]) == 1
+            assert [learner["user_id"] for learner in updated_report.json()["learners"]] == [
+                "student-test"
+            ]
+            assert updated_report.json()["read_only"] is True
+            # The completed lesson must remain visible to the Owner after a fresh
+            # learner login and must not change the report's learner identity.
+            assert updated["user_id"] == "student-test"
+            assert updated["role"] == "COSMETOLOGY_PRO"
+            assert updated["lessons_total"] == learners[0]["lessons_total"]
+            assert updated["overall_progress"] <= 100
+            assert sum(item["status"] == "COMPLETED" for item in updated["lessons"]) == 1
+            assert all(item["progress"] in (0, 100) for item in updated["lessons"])
+            # Repeated completion requests must not inflate the Owner's totals.
+            assert updated["lessons_completed"] <= updated["lessons_total"]
+            assert updated["lessons_completed"] == sum(
+                lesson["status"] == "COMPLETED" for lesson in updated["lessons"]
+            )
+            assert updated["overall_progress"] > learners[0]["overall_progress"]
+            # The Owner's report must be stable across consecutive read-only requests.
+            repeat_report = client.get("/api/owner/learner-progress")
+            assert repeat_report.status_code == 200, repeat_report.text
+            assert repeat_report.json() == updated_report.json()
+            progress = client.get("/api/owner/curriculum/progress-summary")
+            assert progress.status_code == 200, progress.text
+            assert progress.json()["read_only"] is True
+            assert progress.json()["learner_release_authorized"] is False
+            completion = client.get("/api/owner/curriculum/completion-dashboard")
+            assert completion.status_code == 200, completion.text
+            assert completion.json()["read_only"] is True
+            assert completion.json()["activation_performed"] is False
+    finally:
+        engine.dispose()
+
+
+def test_learner_progress_is_isolated_between_students(monkeypatch, tmp_path):
+    """One synthetic learner's lesson activity must not change another's dashboard."""
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'separate_learner_progress.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        Base.metadata.create_all(engine)
+        monkeypatch.setattr(auth, "session", lambda: Session(engine))
+        monkeypatch.setattr(main, "session", lambda: Session(engine))
+        monkeypatch.setattr(auth, "SECRET_KEY", "isolated-two-learner-test-key")
+        with Session(engine) as db:
+            for user_id, email in (
+                ("student-alpha", "student-alpha@example.com"),
+                ("student-beta", "student-beta@example.com"),
+            ):
+                db.add(User(
+                    user_id=user_id,
+                    name="Synthetic " + user_id,
+                    email=email,
+                    password_hash=auth.hash_password("SyntheticPassword!2026"),
+                    role="COSMETOLOGY_PRO",
+                    active=True,
+                    mfa_enabled=False,
+                ))
+            db.commit()
+        with (
+            TestClient(main.app, headers={"Origin": "http://testserver"}) as alpha,
+            TestClient(main.app, headers={"Origin": "http://testserver"}) as beta,
+        ):
+            for client, email in (
+                (alpha, "student-alpha@example.com"),
+                (beta, "student-beta@example.com"),
+            ):
+                login = client.post("/api/auth/login", json={
+                    "email": email,
+                    "password": "SyntheticPassword!2026",
+                })
+                assert login.status_code == 200, login.text
+
+            beta_before = beta.get("/api/learner/dashboard")
+            alpha_before = alpha.get("/api/learner/dashboard")
+            assert beta_before.status_code == 200, beta_before.text
+            assert alpha_before.status_code == 200, alpha_before.text
+
+            opened = alpha.post("/api/learner/lessons/cosmetology-foundations/open")
+            assert opened.status_code == 200, opened.text
+            completed = alpha.post(
+                "/api/learner/lessons/cosmetology-foundations/steps/1/complete"
+            )
+            assert completed.status_code == 200, completed.text
+
+            # A second learner must not inherit the first learner's lesson completion.
+            beta_opened = beta.post("/api/learner/lessons/cosmetology-foundations/open")
+            assert beta_opened.status_code == 200, beta_opened.text
+            assert beta_opened.json()["lesson"]["completed_steps"] == []
+            # Opening the same lesson as a second student must not alter the first student's steps.
+            alpha_reopened = alpha.post("/api/learner/lessons/cosmetology-foundations/open")
+            assert alpha_reopened.status_code == 200, alpha_reopened.text
+            assert 1 in alpha_reopened.json()["lesson"]["completed_steps"]
+            # Student B completing a different step must not alter Student A's saved steps.
+            beta_completed = beta.post(
+                "/api/learner/lessons/cosmetology-foundations/steps/2/complete"
+            )
+            assert beta_completed.status_code == 200, beta_completed.text
+            assert 2 in beta_completed.json()["lesson"]["completed_steps"]
+            alpha_after_beta_step = alpha.post(
+                "/api/learner/lessons/cosmetology-foundations/open"
+            )
+            assert alpha_after_beta_step.status_code == 200, alpha_after_beta_step.text
+            assert 1 in alpha_after_beta_step.json()["lesson"]["completed_steps"]
+            assert 2 not in alpha_after_beta_step.json()["lesson"]["completed_steps"]
+            # Reopening Student A's lesson must not erase Student B's independent step.
+            beta_reopened = beta.post(
+                "/api/learner/lessons/cosmetology-foundations/open"
+            )
+            assert beta_reopened.status_code == 200, beta_reopened.text
+            assert 2 in beta_reopened.json()["lesson"]["completed_steps"]
+            assert 1 not in beta_reopened.json()["lesson"]["completed_steps"]
+            # Each student's dashboard must remain stable across repeated reads.
+            beta_dashboard_repeat = beta.get("/api/learner/dashboard")
+            assert beta_dashboard_repeat.status_code == 200, beta_dashboard_repeat.text
+            assert (
+                beta_dashboard_repeat.json()["overall_progress"]
+                == beta.get("/api/learner/dashboard").json()["overall_progress"]
+            )
+            alpha_after = alpha.get("/api/learner/dashboard")
+            beta_after = beta.get("/api/learner/dashboard")
+            assert alpha_after.status_code == 200, alpha_after.text
+            assert beta_after.status_code == 200, beta_after.text
+            assert (
+                alpha_after.json()["overall_progress"]
+                > alpha_before.json()["overall_progress"]
+            )
+            assert (
+                beta_after.json()["overall_progress"]
+                > beta_before.json()["overall_progress"]
+            )
+    finally:
+        engine.dispose()

@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from crownpath.database import init_db, session
 from crownpath.models import InstructorRequest, LearnerLessonStep, LearnerProgress, User
+from crownpath.audit import record_audit
 from crownpath.auth import authenticate, create_access_token, create_mfa_challenge, create_user, create_owner, decode_access_token, decode_mfa_challenge, revoke_access_token, enable_mfa, get_user_by_id, mfa_provisioning_uri, owner_exists, public_user, list_users, set_user_role, set_user_active, start_mfa_setup, verify_mfa_code
 from crownpath.permissions import has_permission, permissions_for_role
 from crownpath.production_config import production_readiness
@@ -83,6 +84,11 @@ class CurriculumLessonVersionCreateRequest(BaseModel):
     lesson_id:str=Field(min_length=1,max_length=100)
     content_json:str=Field(min_length=2,max_length=100000)
     version:int=Field(default=1,ge=1)
+class InstructorDraftSubmitRequest(BaseModel):
+    lesson_id:str=Field(min_length=1,max_length=100)
+    content_json:str=Field(min_length=2,max_length=65536)
+    version:int=Field(ge=1)
+
 class CurriculumVersionApprovalRequest(BaseModel):
     version_id:str=Field(min_length=1,max_length=100)
 
@@ -219,12 +225,20 @@ def owner_activation(payload:OwnerActivateRequest,response:Response):
 @app.post("/api/auth/login")
 def login(payload:LoginRequest,response:Response):
     user,status=authenticate(str(payload.email),payload.password)
-    if status=="LOCKED": raise HTTPException(423,"Account temporarily locked.")
-    if not user: raise HTTPException(401,"Invalid sign-in.")
-    if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
+    if status=="LOCKED":
+        record_audit(None,"LOGIN_LOCKED","SECURITY","DENIED")
+        raise HTTPException(423,"Account temporarily locked.")
+    if not user:
+        record_audit(None,"LOGIN_FAILED","SECURITY","DENIED")
+        raise HTTPException(401,"Invalid sign-in.")
+    if not role_access_approved(user["role"]):
+        record_audit(user["user_id"],"LOGIN_ROLE_BLOCKED","SECURITY","DENIED")
+        raise HTTPException(403,"This account is not open during owner testing.")
     if user["mfa_enabled"]:
+        record_audit(user["user_id"],"MFA_CHALLENGE_ISSUED","SECURITY","PENDING")
         return {"authenticated":False,"mfa_required":True,"challenge":create_mfa_challenge(user["user_id"])}
     token=create_access_token(user["user_id"])
+    record_audit(user["user_id"],"LOGIN_SUCCESS","SECURITY","SUCCESS")
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(user)}
 
@@ -232,10 +246,17 @@ def login(payload:LoginRequest,response:Response):
 def mfa_verify(payload:MfaVerifyRequest,response:Response):
     user_id=decode_mfa_challenge(payload.challenge)
     user=get_user_by_id(user_id) if user_id else None
-    if not user or not user["active"] or not user["mfa_enabled"]: raise HTTPException(401,"MFA challenge is invalid or expired.")
-    if not role_access_approved(user["role"]): raise HTTPException(403,"This account is not open during owner testing.")
-    if not verify_mfa_code(user_id,payload.code.strip()): raise HTTPException(401,"Invalid authenticator or recovery code.")
+    if not user or not user["active"] or not user["mfa_enabled"]:
+        record_audit(None,"MFA_CHALLENGE_INVALID","SECURITY","DENIED")
+        raise HTTPException(401,"MFA challenge is invalid or expired.")
+    if not role_access_approved(user["role"]):
+        record_audit(user_id,"MFA_ROLE_BLOCKED","SECURITY","DENIED")
+        raise HTTPException(403,"This account is not open during owner testing.")
+    if not verify_mfa_code(user_id,payload.code.strip()):
+        record_audit(user_id,"MFA_VERIFY_FAILED","SECURITY","DENIED")
+        raise HTTPException(401,"Invalid authenticator or recovery code.")
     token=create_access_token(user_id)
+    record_audit(user_id,"MFA_VERIFY_SUCCESS","SECURITY","SUCCESS")
     response.set_cookie("crownpath_session",token,httponly=True,secure=COOKIE_SECURE,samesite="lax",max_age=1800,path="/")
     return {"authenticated":True,"user":public_user(get_user_by_id(user_id))}
 
@@ -258,10 +279,13 @@ def logout(request:Request, response:Response):
     token = request.cookies.get("crownpath_session")
     if token:
         try:
-            revoke_access_token(token)
+            user_id = decode_access_token(token)
+            revoked = revoke_access_token(token)
         except Exception:
             # A database failure must not be reported as successful revocation.
             raise HTTPException(503, "Logout could not be confirmed. Please retry.")
+        if revoked:
+            record_audit(user_id,"SESSION_LOGOUT","SECURITY","SUCCESS")
     response.delete_cookie("crownpath_session", path="/")
     return {"authenticated":False}
 
@@ -396,17 +420,35 @@ def owner_review_instructor_request(request_id:str,payload:InstructorReviewReque
         return {"request":request_dict(item),"applicant":public_user(get_user_by_id(applicant.user_id))}
     finally: db.close()
 
+@app.get("/api/owner/learner-progress")
+def owner_learner_progress(user=Depends(require_permission("academy.manage"))):
+    if user["role"].upper() != "OWNER":
+        raise HTTPException(403, "Owner access required.")
+    db = session()
+    try:
+        learners = db.scalars(select(User).where(User.role.in_(["HOME_CARE", "BARBER", "COSMETOLOGY_PRO"]))).all()
+        results = []
+        for learner in learners:
+            saved = {item.lesson_id: item for item in db.scalars(select(LearnerProgress).where(LearnerProgress.user_id == learner.user_id)).all()}
+            lessons = [{"lesson_id": lesson_id, "status": saved[lesson_id].status if lesson_id in saved else "NOT_STARTED", "progress": saved[lesson_id].progress_percent if lesson_id in saved else 0} for lesson_id, _ in learner_catalog(learner.role)]
+            results.append({"user_id": learner.user_id, "name": learner.name, "role": learner.role, "lessons_completed": sum(item["status"] == "COMPLETED" for item in lessons), "lessons_total": len(lessons), "overall_progress": round(sum(item["progress"] for item in lessons) / len(lessons)) if lessons else 0, "lessons": lessons})
+        return {"read_only": True, "learners": results}
+    finally:
+        db.close()
+
 @app.get("/api/owner/users")
 def owner_users(user=Depends(require_permission("staff.manage"))): return {"users":[public_user(item) for item in list_users()]}
 @app.patch("/api/owner/users/{user_id}/role")
 def owner_update_role(user_id:str,payload:RoleUpdateRequest,user=Depends(require_permission("staff.manage"))):
     try: updated=set_user_role(user_id,payload.role,payload.active)
     except ValueError as exc: raise HTTPException(400,str(exc))
+    record_audit(user["user_id"],"STAFF_ROLE_UPDATED","SECURITY","SUCCESS",resource_type="USER",resource_id=user_id)
     return {"user":public_user(updated)}
 @app.patch("/api/owner/users/{user_id}/active")
 def owner_update_active(user_id:str,payload:ActiveUpdateRequest,user=Depends(require_permission("staff.manage"))):
     try: updated=set_user_active(user_id,payload.active)
     except ValueError as exc: raise HTTPException(400,str(exc))
+    record_audit(user["user_id"],"STAFF_ACTIVE_UPDATED","SECURITY","SUCCESS",resource_type="USER",resource_id=user_id)
     return {"user":public_user(updated)}
 
 @app.get("/api/avatar/startup/{role}")
@@ -492,6 +534,33 @@ def owner_curriculum_create_lesson(payload:CurriculumLessonCreateRequest,user=De
     except PermissionError as exc: raise HTTPException(403,str(exc))
     except ValueError as exc: raise HTTPException(400,str(exc))
     finally: db.close()
+
+@app.post("/api/instructor/curriculum/drafts")
+def instructor_submit_draft(payload:InstructorDraftSubmitRequest,user=Depends(require_permission("academy.manage_assigned"))):
+    """Assigned instructors may create unapproved drafts; never publish."""
+    from crownpath.instructor_drafts import create_instructor_unapproved_draft
+    if user["role"] != "INSTRUCTOR":
+        raise HTTPException(403,"Instructor role required.")
+    db=session()
+    try:
+        result=create_instructor_unapproved_draft(
+            db,instructor_user_id=user["user_id"],lesson_id=payload.lesson_id,
+            content_json=payload.content_json,version=payload.version,
+        )
+        db.commit()
+        return result
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(403,str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400,str(exc))
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
 
 @app.post("/api/owner/curriculum/lesson-versions")
 def owner_curriculum_create_lesson_version(payload:CurriculumLessonVersionCreateRequest,user=Depends(require_permission("academy.manage"))):
