@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
 from crownpath.payment_mfa_db_proof import (
-    consume_proof, create_test_schema, issue_verified_proof,
+    consume_proof, create_test_schema, issue_verified_proof, revoke_session_proofs,
 )
 
 
@@ -173,5 +173,38 @@ def test_payment_proof_rejected_for_wrong_purpose_at_http_probe(tmp_path):
             allowed = client.post("/isolated/payment-purpose-probe")
         assert allowed.status_code == 200
         assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
+
+
+def test_revoked_session_payment_proof_denied_at_http_probe(tmp_path):
+    """Session termination revokes outstanding proofs before a simulated payment call."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_revoked_session.db'}")
+    try:
+        create_test_schema(engine)
+        proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="terminated-session",
+        )
+        revoked = revoke_session_proofs(
+            engine, user_id="synthetic-owner", session_id="terminated-session",
+        )
+        assert revoked == 1
+        app = FastAPI()
+        provider_calls = []
+
+        @app.post("/isolated/payment-revoked-session-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=proof, user_id="synthetic-owner",
+                session_id="terminated-session",
+            ):
+                raise HTTPException(403, "Payment proof revoked")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            response = client.post("/isolated/payment-revoked-session-probe")
+        assert response.status_code == 403
+        assert provider_calls == []
     finally:
         engine.dispose()
