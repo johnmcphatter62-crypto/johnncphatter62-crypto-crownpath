@@ -109,3 +109,57 @@ def test_password_change_revokes_all_owner_sessions_but_not_other_user(tmp_path)
             assert db.get(AuthToken, "SESSION-B1").used_at is None
     finally:
         engine.dispose()
+
+
+def test_password_change_blocks_outstanding_proof_when_session_rechecked(tmp_path):
+    """A proof alone must never bypass the revoked authoritative session."""
+    from crownpath.payment_mfa_db_proof import (
+        create_test_schema, issue_verified_proof, consume_proof,
+    )
+
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'password_proof.db'}")
+    try:
+        Base.metadata.create_all(engine)
+        create_test_schema(engine)
+        now = datetime.now(timezone.utc)
+        jti = "synthetic-owner-session"
+        with Session(engine) as db:
+            db.add(User(user_id="owner-a", name="Owner",
+                        email="owner-a@example.invalid",
+                        password_hash="synthetic-before", role="OWNER",
+                        active=True, mfa_enabled=True))
+            db.add(AuthToken(token_id="OWNER-SESSION", user_id="owner-a",
+                             token_hash=_hash_jti(jti), token_type="SESSION",
+                             expires_at=now + timedelta(minutes=10), created_at=now))
+            db.commit()
+
+        def session_is_active():
+            with Session(engine) as db:
+                row = db.scalar(sa.select(AuthToken).where(
+                    AuthToken.user_id == "owner-a",
+                    AuthToken.token_hash == _hash_jti(jti),
+                    AuthToken.token_type == "SESSION",
+                    AuthToken.used_at.is_(None),
+                ))
+                return row is not None
+
+        timestamp = int(now.timestamp())
+        proof = issue_verified_proof(engine, user_id="owner-a",
+                                     session_id=jti, now=timestamp)
+        assert session_is_active()
+        with Session(engine) as db:
+            db.get(User, "owner-a").password_hash = "synthetic-after"
+            db.execute(sa.update(AuthToken).where(
+                AuthToken.user_id == "owner-a",
+                AuthToken.token_type == "SESSION",
+                AuthToken.used_at.is_(None),
+            ).values(used_at=now))
+            db.commit()
+
+        assert not session_is_active()
+        # Demonstrates why a trusted session recheck is mandatory before use.
+        # The test-only proof store does NOT itself reject this stale proof.
+        assert consume_proof(engine, token=proof, user_id="owner-a",
+                             session_id=jti, now=timestamp)
+    finally:
+        engine.dispose()
