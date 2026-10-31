@@ -57,3 +57,20 @@ def test_authoritative_database_failure_fails_closed():
         token(), secret=SECRET, algorithm=ALG,
         active_session=broken, active_user=lambda _: True,
     ) is None
+
+
+def test_revoked_signed_session_cannot_reach_payment_permission_helper():
+    """Synthetic composition check, not an HTTP/payment route integration test."""
+    from crownpath.payment_access import can_configure_payments
+
+    signed = token()
+    owner = {"role": "OWNER", "active": True, "mfa_enabled": True}
+
+    def payment_authorized(active_sessions):
+        identity = validate(signed, active_sessions=active_sessions)
+        return bool(identity and can_configure_payments(
+            owner, recent_mfa_verified=True,
+        ))
+
+    assert payment_authorized({("owner", "s1")})
+    assert not payment_authorized(set())
