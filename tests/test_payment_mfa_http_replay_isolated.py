@@ -710,3 +710,45 @@ def test_revocation_invalidates_multiple_proofs_without_affecting_sibling_sessio
         assert provider_calls == ["sibling-session-change"]
     finally:
         engine.dispose()
+
+
+def test_active_owners_cannot_exchange_payment_proofs(tmp_path):
+    """Each active owner must use their own session-scoped payment proof."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_owner_cross_scope.db'}")
+    try:
+        create_test_schema(engine)
+        owner_a, owner_b = "synthetic-owner-a", "synthetic-owner-b"
+        session_a, session_b = "active-session-a", "active-session-b"
+        proof_a = issue_verified_proof(engine, user_id=owner_a, session_id=session_a)
+        proof_b = issue_verified_proof(engine, user_id=owner_b, session_id=session_b)
+        app = FastAPI()
+        provider_calls = []
+        request_scope = {"owner": owner_b, "session": session_b, "proof": proof_a}
+
+        @app.post("/isolated/payment-cross-owner-proof-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=request_scope["proof"], user_id=request_scope["owner"],
+                session_id=request_scope["session"],
+            ):
+                raise HTTPException(403, "Payment proof owner/session mismatch")
+            provider_calls.append(request_scope["owner"])
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            # An active second owner cannot borrow the first owner's proof.
+            assert client.post("/isolated/payment-cross-owner-proof-probe").status_code == 403
+            assert provider_calls == []
+            request_scope.update(owner=owner_a, session=session_b)
+            assert client.post("/isolated/payment-cross-owner-proof-probe").status_code == 403
+            assert provider_calls == []
+            # Neither mismatch consumes the rightful owner's proof.
+            request_scope.update(owner=owner_a, session=session_a)
+            assert client.post("/isolated/payment-cross-owner-proof-probe").status_code == 200
+            assert client.post("/isolated/payment-cross-owner-proof-probe").status_code == 403
+            request_scope.update(owner=owner_b, session=session_b, proof=proof_b)
+            assert client.post("/isolated/payment-cross-owner-proof-probe").status_code == 200
+            assert client.post("/isolated/payment-cross-owner-proof-probe").status_code == 403
+        assert provider_calls == [owner_a, owner_b]
+    finally:
+        engine.dispose()
