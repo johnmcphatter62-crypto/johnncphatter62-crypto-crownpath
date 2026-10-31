@@ -493,3 +493,37 @@ def test_reactivated_owner_new_proof_stays_bound_to_owner_and_session(tmp_path):
         assert not consume_proof(engine, token=old_proof, user_id=owner, session_id=session)
     finally:
         engine.dispose()
+
+
+def test_fresh_proof_revoked_again_while_owner_remains_active(tmp_path):
+    """A second session revocation invalidates new proof without disabling owner."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_second_revocation.db'}")
+    try:
+        create_test_schema(engine)
+        owner, session = "synthetic-owner", "reactivated-session"
+        old_proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        assert revoke_session_proofs(engine, user_id=owner, session_id=session) == 1
+        fresh_proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        account = {"active": True}
+        # Terminate the reactivated session again, without disabling the account.
+        assert revoke_session_proofs(engine, user_id=owner, session_id=session) == 1
+        app = FastAPI()
+        provider_calls = []
+
+        @app.post("/isolated/payment-second-revocation-probe")
+        def probe():
+            if not account["active"] or not consume_proof(
+                engine, token=fresh_proof, user_id=owner, session_id=session,
+            ):
+                raise HTTPException(403, "Payment proof revoked")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-second-revocation-probe")
+        assert denied.status_code == 403
+        assert account["active"] is True
+        assert provider_calls == []
+        assert not consume_proof(engine, token=old_proof, user_id=owner, session_id=session)
+    finally:
+        engine.dispose()
