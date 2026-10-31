@@ -44,3 +44,28 @@ def test_payment_permission_http_boundary_denies_untrusted_or_disabled_owner(mon
         )
         assert response.status_code == 401
         assert calls == []
+
+
+def test_authenticated_non_owner_cannot_configure_payments_over_http(monkeypatch):
+    """Synthetic authenticated learner must fail permission gate before side effects."""
+    probe = FastAPI()
+    changes = []
+
+    @probe.post("/isolated/payment-config-probe")
+    def payment_probe(user=Depends(main.require_permission("payments.configure"))):
+        changes.append(user["user_id"])
+        return {"allowed": True}
+
+    monkeypatch.setattr(main, "decode_access_token", lambda token: "synthetic-learner")
+    monkeypatch.setattr(main, "get_user_by_id", lambda uid: {
+        "user_id": uid, "role": "COSMETOLOGY_PRO", "active": True,
+        "mfa_enabled": True,
+    })
+    monkeypatch.setattr(main, "role_access_approved", lambda role: True)
+    with TestClient(probe) as client:
+        response = client.post(
+            "/isolated/payment-config-probe",
+            cookies={"crownpath_session": "synthetic-authenticated-session"},
+        )
+    assert response.status_code == 403
+    assert changes == []
