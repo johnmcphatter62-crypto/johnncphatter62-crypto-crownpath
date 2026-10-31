@@ -70,3 +70,39 @@ def test_expired_payment_proof_rejected_at_isolated_http_probe(tmp_path):
         assert provider_calls == []
     finally:
         engine.dispose()
+
+
+def test_payment_proof_cannot_be_substituted_into_another_session(tmp_path):
+    """Wrong session denies at HTTP probe without consuming the rightful proof."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_session_swap.db'}")
+    try:
+        create_test_schema(engine)
+        proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="original-session",
+        )
+        app = FastAPI()
+        provider_calls = []
+        # These server-selected session identities simulate authenticated context;
+        # the request never supplies the authoritative session identifier.
+        current_session = {"id": "different-session"}
+
+        @app.post("/isolated/payment-session-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=proof, user_id="synthetic-owner",
+                session_id=current_session["id"],
+            ):
+                raise HTTPException(403, "Payment proof session mismatch")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-session-probe")
+            assert denied.status_code == 403
+            assert provider_calls == []
+            current_session["id"] = "original-session"
+            allowed = client.post("/isolated/payment-session-probe")
+        assert allowed.status_code == 200
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
