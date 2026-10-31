@@ -208,3 +208,43 @@ def test_revoked_session_payment_proof_denied_at_http_probe(tmp_path):
         assert provider_calls == []
     finally:
         engine.dispose()
+
+
+def test_revoking_one_session_preserves_other_owner_session_proof(tmp_path):
+    """Revocation must target only the terminated session, not sibling sessions."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_session_scope.db'}")
+    try:
+        create_test_schema(engine)
+        terminated_proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="terminated-session",
+        )
+        active_proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="active-session",
+        )
+        assert revoke_session_proofs(
+            engine, user_id="synthetic-owner", session_id="terminated-session",
+        ) == 1
+        app = FastAPI()
+        provider_calls = []
+        request_scope = {"proof": terminated_proof, "session": "terminated-session"}
+
+        @app.post("/isolated/payment-session-scope-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=request_scope["proof"], user_id="synthetic-owner",
+                session_id=request_scope["session"],
+            ):
+                raise HTTPException(403, "Payment proof unavailable")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-session-scope-probe")
+            assert denied.status_code == 403
+            assert provider_calls == []
+            request_scope.update(proof=active_proof, session="active-session")
+            allowed = client.post("/isolated/payment-session-scope-probe")
+        assert allowed.status_code == 200
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
