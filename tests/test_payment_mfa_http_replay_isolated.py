@@ -412,3 +412,46 @@ def test_disabled_then_reenabled_owner_cannot_reuse_old_payment_proofs(tmp_path)
         assert provider_calls == []
     finally:
         engine.dispose()
+
+
+def test_reactivated_owner_requires_new_payment_proof_at_http_probe(tmp_path):
+    """After reactivation, an old revoked proof fails; a new proof works once."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_new_proof_after_reactivation.db'}")
+    try:
+        create_test_schema(engine)
+        owner, session = "synthetic-owner", "synthetic-session"
+        old_proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        account = {"active": False}
+        assert revoke_session_proofs(
+            engine, user_id=owner, session_id=session,
+        ) == 1
+        account["active"] = True
+        new_proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        app = FastAPI()
+        provider_calls = []
+        scope = {"proof": old_proof}
+
+        @app.post("/isolated/payment-reactivated-new-proof-probe")
+        def probe():
+            if not account["active"] or not consume_proof(
+                engine, token=scope["proof"], user_id=owner, session_id=session,
+            ):
+                raise HTTPException(403, "Fresh payment authorization required")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            assert client.post(
+                "/isolated/payment-reactivated-new-proof-probe"
+            ).status_code == 403
+            assert provider_calls == []
+            scope["proof"] = new_proof
+            assert client.post(
+                "/isolated/payment-reactivated-new-proof-probe"
+            ).status_code == 200
+            assert client.post(
+                "/isolated/payment-reactivated-new-proof-probe"
+            ).status_code == 403
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
