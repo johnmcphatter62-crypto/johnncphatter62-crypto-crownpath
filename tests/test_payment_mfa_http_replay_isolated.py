@@ -455,3 +455,41 @@ def test_reactivated_owner_requires_new_payment_proof_at_http_probe(tmp_path):
         assert provider_calls == ["simulated-config-change"]
     finally:
         engine.dispose()
+
+
+def test_reactivated_owner_new_proof_stays_bound_to_owner_and_session(tmp_path):
+    """A newly issued proof cannot cross owner/session after reactivation."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_reactivated_scope.db'}")
+    try:
+        create_test_schema(engine)
+        owner, session = "synthetic-owner-a", "reactivated-session"
+        old_proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        assert revoke_session_proofs(engine, user_id=owner, session_id=session) == 1
+        new_proof = issue_verified_proof(engine, user_id=owner, session_id=session)
+        app = FastAPI()
+        provider_calls = []
+        scope = {"owner": "synthetic-owner-b", "session": session}
+
+        @app.post("/isolated/payment-reactivated-scope-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=new_proof, user_id=scope["owner"],
+                session_id=scope["session"],
+            ):
+                raise HTTPException(403, "Payment proof scope mismatch")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            assert client.post("/isolated/payment-reactivated-scope-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(owner=owner, session="other-session")
+            assert client.post("/isolated/payment-reactivated-scope-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(owner=owner, session=session)
+            assert client.post("/isolated/payment-reactivated-scope-probe").status_code == 200
+            assert client.post("/isolated/payment-reactivated-scope-probe").status_code == 403
+        assert provider_calls == ["simulated-config-change"]
+        assert not consume_proof(engine, token=old_proof, user_id=owner, session_id=session)
+    finally:
+        engine.dispose()
