@@ -248,3 +248,46 @@ def test_revoking_one_session_preserves_other_owner_session_proof(tmp_path):
         assert provider_calls == ["simulated-config-change"]
     finally:
         engine.dispose()
+
+
+def test_repeated_session_revocation_is_idempotent_and_scoped(tmp_path):
+    """A second revoke changes nothing and preserves another session's proof."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_repeat_revoke.db'}")
+    try:
+        create_test_schema(engine)
+        revoked_proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="terminated-session",
+        )
+        other_proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="active-session",
+        )
+        assert revoke_session_proofs(
+            engine, user_id="synthetic-owner", session_id="terminated-session",
+        ) == 1
+        assert revoke_session_proofs(
+            engine, user_id="synthetic-owner", session_id="terminated-session",
+        ) == 0
+        app = FastAPI()
+        provider_calls = []
+        scope = {"proof": revoked_proof, "session": "terminated-session"}
+
+        @app.post("/isolated/payment-repeat-revoke-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=scope["proof"], user_id="synthetic-owner",
+                session_id=scope["session"],
+            ):
+                raise HTTPException(403, "Payment proof unavailable")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-repeat-revoke-probe")
+            assert denied.status_code == 403
+            assert provider_calls == []
+            scope.update(proof=other_proof, session="active-session")
+            allowed = client.post("/isolated/payment-repeat-revoke-probe")
+        assert allowed.status_code == 200
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
