@@ -39,3 +39,34 @@ def test_payment_proof_replay_denied_before_simulated_provider_call(tmp_path):
         assert provider_calls == ["simulated-config-change"]
     finally:
         engine.dispose()
+
+
+def test_expired_payment_proof_rejected_at_isolated_http_probe(tmp_path):
+    """Expired synthetic proof must not reach a simulated payment provider."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_expired.db'}")
+    try:
+        create_test_schema(engine)
+        issued_at = 1_700_000_000
+        proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="synthetic-session",
+            now=issued_at, ttl_seconds=30,
+        )
+        app = FastAPI()
+        provider_calls = []
+
+        @app.post("/isolated/payment-expired-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=proof, user_id="synthetic-owner",
+                session_id="synthetic-session", now=issued_at + 31,
+            ):
+                raise HTTPException(403, "Payment proof expired")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            response = client.post("/isolated/payment-expired-probe")
+        assert response.status_code == 403
+        assert provider_calls == []
+    finally:
+        engine.dispose()
