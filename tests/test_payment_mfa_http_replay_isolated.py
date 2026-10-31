@@ -291,3 +291,43 @@ def test_repeated_session_revocation_is_idempotent_and_scoped(tmp_path):
         assert provider_calls == ["simulated-config-change"]
     finally:
         engine.dispose()
+
+
+def test_revocation_of_one_owner_preserves_other_owner_session_proof(tmp_path):
+    """A targeted revoke must not invalidate another owner's valid proof."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_cross_owner_revoke.db'}")
+    try:
+        create_test_schema(engine)
+        revoked_proof = issue_verified_proof(
+            engine, user_id="synthetic-owner-a", session_id="shared-session-label",
+        )
+        other_proof = issue_verified_proof(
+            engine, user_id="synthetic-owner-b", session_id="shared-session-label",
+        )
+        assert revoke_session_proofs(
+            engine, user_id="synthetic-owner-a", session_id="shared-session-label",
+        ) == 1
+        app = FastAPI()
+        provider_calls = []
+        scope = {"proof": revoked_proof, "owner": "synthetic-owner-a"}
+
+        @app.post("/isolated/payment-cross-owner-revoke-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=scope["proof"], user_id=scope["owner"],
+                session_id="shared-session-label",
+            ):
+                raise HTTPException(403, "Payment proof unavailable")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-cross-owner-revoke-probe")
+            assert denied.status_code == 403
+            assert provider_calls == []
+            scope.update(proof=other_proof, owner="synthetic-owner-b")
+            allowed = client.post("/isolated/payment-cross-owner-revoke-probe")
+        assert allowed.status_code == 200
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
