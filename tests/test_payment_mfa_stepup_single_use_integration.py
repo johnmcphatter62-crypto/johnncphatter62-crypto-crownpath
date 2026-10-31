@@ -56,3 +56,28 @@ def test_stale_stepup_denied_before_proof_issue(tmp_path):
     assert not fresh_payment_stepup(record, user_id="owner-a",
                                    session_id="session-a",
                                    action="payments.configure", now=now)
+
+
+def test_expired_proof_denied_even_after_fresh_stepup(tmp_path):
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'expired_proof.db'}")
+    try:
+        create_test_schema(engine)
+        now = datetime(2026, 10, 31, 12, tzinfo=timezone.utc)
+        record = {
+            "verified": True, "consumed": False, "user_id": "owner-a",
+            "session_id": "session-a", "action": "payments.configure",
+            "verified_at": now - timedelta(seconds=1),
+        }
+        assert fresh_payment_stepup(record, user_id="owner-a",
+                                   session_id="session-a",
+                                   action="payments.configure", now=now)
+        timestamp = int(now.timestamp())
+        token = issue_verified_proof(engine, user_id="owner-a",
+                                     session_id="session-a", now=timestamp,
+                                     ttl_seconds=10)
+        assert not consume_proof(engine, token=token, user_id="owner-a",
+                                 session_id="session-a", now=timestamp + 10)
+        assert not consume_proof(engine, token=token, user_id="owner-a",
+                                 session_id="session-a", now=timestamp + 11)
+    finally:
+        engine.dispose()
