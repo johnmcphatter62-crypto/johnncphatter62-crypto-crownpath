@@ -660,3 +660,53 @@ def test_concurrent_revocation_and_requests_allow_at_most_one_change(tmp_path):
         assert not consume_proof(engine, token=proof, user_id=owner, session_id=session)
     finally:
         engine.dispose()
+
+
+def test_revocation_invalidates_multiple_proofs_without_affecting_sibling_session(tmp_path):
+    """Revoking a session invalidates every proof scoped to it, not sibling proofs."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_multi_proof_revoke.db'}")
+    try:
+        create_test_schema(engine)
+        owner = "synthetic-owner"
+        revoked_session, sibling_session = "revoked-session", "active-sibling-session"
+        revoked_proofs = [
+            issue_verified_proof(engine, user_id=owner, session_id=revoked_session)
+            for _ in range(3)
+        ]
+        sibling_proof = issue_verified_proof(
+            engine, user_id=owner, session_id=sibling_session,
+        )
+        assert revoke_session_proofs(
+            engine, user_id=owner, session_id=revoked_session,
+        ) == len(revoked_proofs)
+        app = FastAPI()
+        provider_calls = []
+
+        @app.post("/isolated/payment-multiple-revoked-proofs-probe")
+        def revoked_probe():
+            for proof in revoked_proofs:
+                if consume_proof(
+                    engine, token=proof, user_id=owner, session_id=revoked_session,
+                ):
+                    provider_calls.append("revoked-session-change")
+                    return {"changed": True}
+            raise HTTPException(403, "All session proofs revoked")
+
+        @app.post("/isolated/payment-sibling-session-probe")
+        def sibling_probe():
+            if not consume_proof(
+                engine, token=sibling_proof, user_id=owner,
+                session_id=sibling_session,
+            ):
+                raise HTTPException(403, "Sibling proof unavailable")
+            provider_calls.append("sibling-session-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            assert client.post("/isolated/payment-multiple-revoked-proofs-probe").status_code == 403
+            assert provider_calls == []
+            assert client.post("/isolated/payment-sibling-session-probe").status_code == 200
+            assert client.post("/isolated/payment-sibling-session-probe").status_code == 403
+        assert provider_calls == ["sibling-session-change"]
+    finally:
+        engine.dispose()
