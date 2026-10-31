@@ -69,3 +69,32 @@ def test_authenticated_non_owner_cannot_configure_payments_over_http(monkeypatch
         )
     assert response.status_code == 403
     assert changes == []
+
+
+def test_owner_without_mfa_cannot_pass_payment_step_up_http_probe(monkeypatch):
+    """Test-only step-up gate; production payment routes remain unimplemented."""
+    from fastapi import HTTPException
+    from crownpath.payment_access import can_configure_payments
+
+    probe = FastAPI()
+    changes = []
+
+    @probe.post("/isolated/payment-step-up-probe")
+    def payment_probe(user=Depends(main.require_permission("payments.configure"))):
+        if not can_configure_payments(user, recent_mfa_verified=True):
+            raise HTTPException(403, "Payment step-up required")
+        changes.append(user["user_id"])
+        return {"allowed": True}
+
+    monkeypatch.setattr(main, "decode_access_token", lambda token: "synthetic-owner")
+    monkeypatch.setattr(main, "get_user_by_id", lambda uid: {
+        "user_id": uid, "role": "OWNER", "active": True,
+        "mfa_enabled": False,
+    })
+    with TestClient(probe) as client:
+        response = client.post(
+            "/isolated/payment-step-up-probe",
+            cookies={"crownpath_session": "synthetic-owner-session"},
+        )
+    assert response.status_code == 403
+    assert changes == []
