@@ -106,3 +106,38 @@ def test_payment_proof_cannot_be_substituted_into_another_session(tmp_path):
         assert provider_calls == ["simulated-config-change"]
     finally:
         engine.dispose()
+
+
+def test_payment_proof_cannot_cross_owner_identity_at_http_probe(tmp_path):
+    """A proof scoped to Owner A must not authorize Owner B or be consumed."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_owner_swap.db'}")
+    try:
+        create_test_schema(engine)
+        proof = issue_verified_proof(
+            engine, user_id="synthetic-owner-a", session_id="original-session",
+        )
+        app = FastAPI()
+        provider_calls = []
+        # Server-owned identity fixture, never accepted from request payload.
+        identity = {"user_id": "synthetic-owner-b"}
+
+        @app.post("/isolated/payment-owner-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=proof, user_id=identity["user_id"],
+                session_id="original-session",
+            ):
+                raise HTTPException(403, "Payment proof owner mismatch")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-owner-probe")
+            assert denied.status_code == 403
+            assert provider_calls == []
+            identity["user_id"] = "synthetic-owner-a"
+            allowed = client.post("/isolated/payment-owner-probe")
+        assert allowed.status_code == 200
+        assert provider_calls == ["simulated-config-change"]
+    finally:
+        engine.dispose()
