@@ -752,3 +752,41 @@ def test_active_owners_cannot_exchange_payment_proofs(tmp_path):
         assert provider_calls == [owner_a, owner_b]
     finally:
         engine.dispose()
+
+
+def test_revoked_owner_proof_cannot_transfer_to_another_active_owner(tmp_path):
+    """Revocation cannot turn one owner's proof into another owner's authority."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_revoked_owner_transfer.db'}")
+    try:
+        create_test_schema(engine)
+        owner_a, owner_b = "synthetic-owner-a", "synthetic-owner-b"
+        session_a, session_b = "revoked-session-a", "active-session-b"
+        revoked_proof = issue_verified_proof(engine, user_id=owner_a, session_id=session_a)
+        valid_b_proof = issue_verified_proof(engine, user_id=owner_b, session_id=session_b)
+        assert revoke_session_proofs(engine, user_id=owner_a, session_id=session_a) == 1
+        app = FastAPI()
+        provider_calls = []
+        scope = {"owner": owner_b, "session": session_b, "proof": revoked_proof}
+
+        @app.post("/isolated/payment-revoked-owner-transfer-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=scope["proof"], user_id=scope["owner"],
+                session_id=scope["session"],
+            ):
+                raise HTTPException(403, "Revoked or mismatched payment proof")
+            provider_calls.append(scope["owner"])
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            assert client.post("/isolated/payment-revoked-owner-transfer-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(owner=owner_a, session=session_a)
+            assert client.post("/isolated/payment-revoked-owner-transfer-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(owner=owner_b, session=session_b, proof=valid_b_proof)
+            assert client.post("/isolated/payment-revoked-owner-transfer-probe").status_code == 200
+            assert client.post("/isolated/payment-revoked-owner-transfer-probe").status_code == 403
+        assert provider_calls == [owner_b]
+    finally:
+        engine.dispose()
