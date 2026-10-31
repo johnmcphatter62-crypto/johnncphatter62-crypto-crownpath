@@ -89,5 +89,23 @@ def test_actual_orm_hmac_session_validation_and_revocation(tmp_path):
             row.used_at = datetime.now(timezone.utc)
             db.commit()
         assert validate(valid) is None
+
+        # Reissue a separate, still-valid session for an Owner whose account
+        # is subsequently disabled. Account status must independently deny.
+        with Session(engine) as db:
+            db.add(AuthToken(
+                token_id="HMAC-TEST-TOKEN-2", user_id="owner-a",
+                token_hash=_hash_session_id("owner-a-new-jti"),
+                token_type="SESSION", expires_at=now + timedelta(minutes=10),
+                created_at=now,
+            ))
+            db.commit()
+        replacement = signed(jti="owner-a-new-jti")
+        assert validate(replacement) == ("owner-a", "owner-a-new-jti")
+        with Session(engine) as db:
+            owner = db.get(User, "owner-a")
+            owner.active = False
+            db.commit()
+        assert validate(replacement) is None
     finally:
         engine.dispose()
