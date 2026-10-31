@@ -331,3 +331,40 @@ def test_revocation_of_one_owner_preserves_other_owner_session_proof(tmp_path):
         assert provider_calls == ["simulated-config-change"]
     finally:
         engine.dispose()
+
+
+def test_disabled_owner_cannot_use_previously_issued_proof_at_http_probe(tmp_path):
+    """Account deactivation blocks a previously issued proof before provider access."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_disabled_owner.db'}")
+    try:
+        create_test_schema(engine)
+        proof = issue_verified_proof(
+            engine, user_id="synthetic-owner", session_id="synthetic-session",
+        )
+        app = FastAPI()
+        provider_calls = []
+        account = {"active": False}  # Disabled after the proof was issued.
+
+        @app.post("/isolated/payment-disabled-owner-probe")
+        def probe():
+            if not account["active"]:
+                raise HTTPException(403, "Owner account disabled")
+            if not consume_proof(
+                engine, token=proof, user_id="synthetic-owner",
+                session_id="synthetic-session",
+            ):
+                raise HTTPException(403, "Payment proof unavailable")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            denied = client.post("/isolated/payment-disabled-owner-probe")
+        assert denied.status_code == 403
+        assert provider_calls == []
+        # Deactivation must not consume the proof; revocation is a separate control.
+        assert consume_proof(
+            engine, token=proof, user_id="synthetic-owner",
+            session_id="synthetic-session",
+        ) is True
+    finally:
+        engine.dispose()
