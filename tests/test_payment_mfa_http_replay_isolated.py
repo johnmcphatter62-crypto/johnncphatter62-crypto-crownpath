@@ -527,3 +527,44 @@ def test_fresh_proof_revoked_again_while_owner_remains_active(tmp_path):
         assert not consume_proof(engine, token=old_proof, user_id=owner, session_id=session)
     finally:
         engine.dispose()
+
+
+def test_new_session_requires_new_proof_after_second_revocation(tmp_path):
+    """Twice-revoked old session cannot authorize a newly established session."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'http_new_session_after_revoke.db'}")
+    try:
+        create_test_schema(engine)
+        owner = "synthetic-owner"
+        old_session, new_session = "terminated-session", "new-session"
+        first_proof = issue_verified_proof(engine, user_id=owner, session_id=old_session)
+        assert revoke_session_proofs(engine, user_id=owner, session_id=old_session) == 1
+        second_proof = issue_verified_proof(engine, user_id=owner, session_id=old_session)
+        assert revoke_session_proofs(engine, user_id=owner, session_id=old_session) == 1
+        fresh_proof = issue_verified_proof(engine, user_id=owner, session_id=new_session)
+        app = FastAPI()
+        provider_calls = []
+        scope = {"proof": second_proof, "session": new_session}
+
+        @app.post("/isolated/payment-new-session-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=scope["proof"], user_id=owner,
+                session_id=scope["session"],
+            ):
+                raise HTTPException(403, "New session authorization required")
+            provider_calls.append("simulated-config-change")
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            assert client.post("/isolated/payment-new-session-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(proof=fresh_proof, session=old_session)
+            assert client.post("/isolated/payment-new-session-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(proof=fresh_proof, session=new_session)
+            assert client.post("/isolated/payment-new-session-probe").status_code == 200
+            assert client.post("/isolated/payment-new-session-probe").status_code == 403
+        assert provider_calls == ["simulated-config-change"]
+        assert not consume_proof(engine, token=first_proof, user_id=owner, session_id=old_session)
+    finally:
+        engine.dispose()
