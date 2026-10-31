@@ -830,3 +830,59 @@ def test_owner_revocation_does_not_cross_shared_session_identifier(tmp_path):
         assert provider_calls == [owner_b]
     finally:
         engine.dispose()
+
+
+def test_simultaneous_owner_session_revocations_remain_isolated(tmp_path):
+    """Concurrent owner-specific revocations do not revoke unrelated sessions."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'http_two_owner_revocations.db'}",
+        connect_args={"timeout": 10},
+    )
+    try:
+        create_test_schema(engine)
+        owner_a, owner_b = "synthetic-owner-a", "synthetic-owner-b"
+        shared_session = "shared-session-label"
+        other_session = "unaffected-session"
+        proof_a = issue_verified_proof(engine, user_id=owner_a, session_id=shared_session)
+        proof_b = issue_verified_proof(engine, user_id=owner_b, session_id=shared_session)
+        unaffected_a = issue_verified_proof(engine, user_id=owner_a, session_id=other_session)
+        unaffected_b = issue_verified_proof(engine, user_id=owner_b, session_id=other_session)
+        barrier = Barrier(2)
+
+        def revoke(owner):
+            barrier.wait(timeout=10)
+            return revoke_session_proofs(engine, user_id=owner, session_id=shared_session)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            counts = list(pool.map(revoke, (owner_a, owner_b)))
+        assert counts == [1, 1]
+        app = FastAPI()
+        provider_calls = []
+        scope = {"owner": owner_a, "session": shared_session, "proof": proof_a}
+
+        @app.post("/isolated/payment-concurrent-owner-revocations-probe")
+        def probe():
+            if not consume_proof(
+                engine, token=scope["proof"], user_id=scope["owner"],
+                session_id=scope["session"],
+            ):
+                raise HTTPException(403, "Proof revoked or mismatched")
+            provider_calls.append(scope["owner"])
+            return {"changed": True}
+
+        with TestClient(app) as client:
+            assert client.post("/isolated/payment-concurrent-owner-revocations-probe").status_code == 403
+            scope.update(owner=owner_b, proof=proof_b)
+            assert client.post("/isolated/payment-concurrent-owner-revocations-probe").status_code == 403
+            assert provider_calls == []
+            scope.update(owner=owner_a, session=other_session, proof=unaffected_a)
+            assert client.post("/isolated/payment-concurrent-owner-revocations-probe").status_code == 200
+            scope.update(owner=owner_b, session=other_session, proof=unaffected_b)
+            assert client.post("/isolated/payment-concurrent-owner-revocations-probe").status_code == 200
+            assert client.post("/isolated/payment-concurrent-owner-revocations-probe").status_code == 403
+        assert provider_calls == [owner_a, owner_b]
+    finally:
+        engine.dispose()
