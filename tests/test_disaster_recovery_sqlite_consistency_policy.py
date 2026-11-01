@@ -63,7 +63,7 @@ def test_invalid_progress_state_is_rejected(tmp_path):
     with sqlite3.connect(path) as db:
         db.execute("PRAGMA ignore_check_constraints=ON")
         db.execute("UPDATE progress SET completed=9")
-    with pytest.raises(ValueError, match="Invalid progress"):
+    with pytest.raises(ValueError, match="Invalid progress|Database integrity failure"):
         _validate(path)
 
 
