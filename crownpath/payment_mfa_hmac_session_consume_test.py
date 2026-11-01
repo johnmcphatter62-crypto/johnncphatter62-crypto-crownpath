@@ -31,6 +31,13 @@ def consume_hmac_session_proof_test(engine, *, token, user_id, session_id,
                   AND used_at IS NULL
                   AND expires_at > :timestamp
                   AND EXISTS (
+                      SELECT 1 FROM users
+                      WHERE user_id = :user_id
+                        AND role = 'OWNER'
+                        AND active = 1
+                        AND mfa_enabled = 1
+                  )
+                  AND EXISTS (
                       SELECT 1 FROM auth_tokens
                       WHERE user_id = :user_id
                         AND token_hash = :session_hash
