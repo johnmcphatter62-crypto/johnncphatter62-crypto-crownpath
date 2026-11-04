@@ -35,6 +35,8 @@ CURRICULUM_TABLES = {
     "curriculum_assessments",
 }
 
+SCHOOL_TABLES = {"schools", "school_memberships"}
+
 
 def _ci_database_url():
     url = os.environ.get("CROWNPATH_DATABASE_URL", "")
@@ -81,18 +83,20 @@ def test_existing_core_schema_without_history_upgrades_and_downgrades(postgres_c
     upgraded = set(sa.inspect(engine).get_table_names())
     assert CORE_TABLES.issubset(upgraded)
     assert CURRICULUM_TABLES.issubset(upgraded)
+    assert SCHOOL_TABLES.issubset(upgraded)
     assert "alembic_version" in upgraded
-    assert upgraded == CORE_TABLES | CURRICULUM_TABLES | {"alembic_version"}
+    assert upgraded == CORE_TABLES | CURRICULUM_TABLES | SCHOOL_TABLES | {"alembic_version"}
 
     with engine.connect() as connection:
         revision = connection.scalar(sa.text("SELECT version_num FROM alembic_version"))
-    assert revision == "20260928_01"
+    assert revision == "20261104_02"
 
     command.downgrade(_alembic_config(), "20260928_00")
 
     downgraded = set(sa.inspect(engine).get_table_names())
     assert CORE_TABLES.issubset(downgraded)
     assert CURRICULUM_TABLES.isdisjoint(downgraded)
+    assert SCHOOL_TABLES.isdisjoint(downgraded)
     assert downgraded == CORE_TABLES | {"alembic_version"}
 
     with engine.connect() as connection:
