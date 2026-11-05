@@ -107,6 +107,29 @@ def test_existing_core_schema_without_history_upgrades_and_downgrades(postgres_c
     assert "alembic_version" in upgraded
     assert upgraded == CORE_TABLES | CURRICULUM_TABLES | SCHOOL_TABLES | {"alembic_version"}
 
+    # Newly migrated school Owner grants are empty and fail closed by default.
+    with engine.connect() as connection:
+        grants = connection.scalar(sa.text(
+            "SELECT COUNT(*) FROM school_owner_authorizations"
+        ))
+        assert grants == 0
+        grant_columns = {
+            column["name"]: column
+            for column in sa.inspect(connection).get_columns("school_owner_authorizations")
+        }
+        assert grant_columns["school_id"]["nullable"] is False
+        assert grant_columns["owner_user_id"]["nullable"] is False
+        assert grant_columns["active"]["nullable"] is False
+        assert grant_columns["revoked_at"]["nullable"] is True
+        assert grant_columns["expires_at"]["nullable"] is True
+        unique_constraints = sa.inspect(connection).get_unique_constraints(
+            "school_owner_authorizations"
+        )
+        assert any(
+            set(item["column_names"]) == {"school_id", "owner_user_id"}
+            for item in unique_constraints
+        )
+
     with engine.connect() as connection:
         revision = connection.scalar(sa.text("SELECT version_num FROM alembic_version"))
     assert revision == "20261104_03"
