@@ -25,7 +25,7 @@ def scoped_owner_school_id(connection, principal, *, now=None):
         return None
     try:
         rows = connection.execute(text(
-            "SELECT m.school_id, m.approved_by_user_id "
+            "SELECT m.school_id, m.approved_by_user_id, m.approved_at "
             "FROM school_memberships AS m "
             "JOIN schools AS s ON s.school_id = m.school_id "
             "JOIN users AS learner ON learner.user_id = m.user_id "
@@ -39,9 +39,23 @@ def scoped_owner_school_id(connection, principal, *, now=None):
         return None
     if len(rows) != 1:
         return None
-    school_id, approver_id = rows[0]
+    school_id, approver_id, approved_at = rows[0]
     if not isinstance(school_id, str) or not school_id:
         return None
     if not owner_authorized_for_school(connection, approver_id, school_id, now=now):
+        return None
+    # A grant issued after membership approval cannot retroactively authorize it.
+    try:
+        grants = connection.execute(text(
+            "SELECT authorization_id FROM school_owner_authorizations "
+            "WHERE owner_user_id = :owner_id AND school_id = :school_id "
+            "AND active = TRUE AND revoked_at IS NULL "
+            "AND granted_at <= :approved_at "
+            "AND (expires_at IS NULL OR expires_at > :now)"
+        ), {"owner_id": approver_id, "school_id": school_id,
+            "approved_at": approved_at, "now": now}).fetchall()
+    except (SQLAlchemyError, TypeError, ValueError):
+        return None
+    if len(grants) != 1:
         return None
     return school_id
