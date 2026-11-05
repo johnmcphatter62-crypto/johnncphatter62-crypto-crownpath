@@ -35,7 +35,7 @@ CURRICULUM_TABLES = {
     "curriculum_assessments",
 }
 
-SCHOOL_TABLES = {"schools", "school_memberships"}
+SCHOOL_TABLES = {"schools", "school_memberships", "school_owner_authorizations"}
 
 
 def _ci_database_url():
@@ -109,7 +109,7 @@ def test_existing_core_schema_without_history_upgrades_and_downgrades(postgres_c
 
     with engine.connect() as connection:
         revision = connection.scalar(sa.text("SELECT version_num FROM alembic_version"))
-    assert revision == "20261104_02"
+    assert revision == "20261104_03"
     with engine.connect() as connection:
         learner = connection.execute(sa.text(
             "SELECT email, role, active FROM users WHERE user_id = :user_id"
