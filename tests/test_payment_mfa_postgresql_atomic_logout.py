@@ -181,3 +181,50 @@ def test_postgres_atomic_logout_rollback_and_session_isolation(isolated_logout_e
     )
     with Session(engine) as db:
         assert db.get(AuthToken, "plain-hash-only").used_at is None
+
+    # Independent PostgreSQL connections must not both win one logout.
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    concurrent_token = auth.create_access_token("owner")
+    assert auth.decode_access_token(concurrent_token) == "owner"
+    concurrent_jti = jwt.decode(
+        concurrent_token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM],
+    )["jti"]
+    concurrent_now = datetime.now(timezone.utc)
+    concurrent_timestamp = int(concurrent_now.timestamp())
+    concurrent_proof = issue_verified_proof(
+        engine, user_id="owner", session_id=concurrent_jti,
+        now=concurrent_timestamp,
+    )
+    start = Barrier(2)
+
+    def concurrent_logout():
+        start.wait(timeout=10)
+        return revoke_session_and_proofs_test(
+            engine, user_id="owner", session_id=concurrent_jti,
+            now=concurrent_now,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(concurrent_logout)
+        second = pool.submit(concurrent_logout)
+        assert sorted([
+            first.result(timeout=20), second.result(timeout=20),
+        ]) == [False, True]
+    assert auth.decode_access_token(concurrent_token) is None
+    assert not consume_proof(
+        engine, token=concurrent_proof, user_id="owner",
+        session_id=concurrent_jti, now=concurrent_timestamp + 1,
+    )
+    with engine.connect() as conn:
+        assert conn.scalar(sa.text(
+            "SELECT used_at FROM payment_mfa_proofs_test WHERE session_id=:sid"
+        ), {"sid": concurrent_jti}) == concurrent_timestamp
+    # Neither the earlier unrelated sessions nor the rejected plain fixture
+    # may have been revoked by either concurrent transaction.
+    with Session(engine) as db:
+        assert db.get(AuthToken, "plain-hash-only").used_at is None
+        for sid in ("other-session", "other-user"):
+            assert db.scalar(sa.select(AuthToken.used_at).where(
+                AuthToken.token_hash == _hash_session_id(sid),
+            )) is None
