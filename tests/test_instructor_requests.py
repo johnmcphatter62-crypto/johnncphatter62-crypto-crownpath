@@ -1,3 +1,4 @@
+from tests.owner_mfa_fixture import enroll_owner_for_test
 import os
 import unittest
 import uuid
@@ -58,6 +59,8 @@ class InstructorRequestIntegrationTest(unittest.TestCase):
         self.client.cookies.clear()
         response = self.client.post("/api/auth/login", json={"email": email, "password": self.password})
         self.assertEqual(response.status_code, 200, response.text)
+        if email == self.owner_email:
+            enroll_owner_for_test(self.client)
         return response
 
     def submit_request(self, statement="I am qualified and would like to teach CrownPath learners."):
