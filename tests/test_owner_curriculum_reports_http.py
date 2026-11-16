@@ -1,3 +1,4 @@
+from tests.owner_mfa_fixture import enroll_owner_for_test
 """Owner-only HTTP curriculum reporting in an isolated SQLite test."""
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -31,6 +32,7 @@ def test_owner_can_read_curriculum_reports(monkeypatch, tmp_path):
                 "email": "owner-reports@example.com",
                 "password": "SyntheticPassword!2026"})
             assert login.status_code == 200, login.text
+            enroll_owner_for_test(client)
             # A cookie-authenticated Owner mutation must reject a foreign Origin.
             cross_origin_mutation = client.post(
                 "/api/owner/curriculum/programs",
