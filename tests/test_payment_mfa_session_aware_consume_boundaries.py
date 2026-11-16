@@ -2,7 +2,7 @@
 
 Uses synthetic rows and a disposable SQLite database only.
 """
-import hashlib
+from crownpath.auth import _hash_session_id
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
@@ -24,7 +24,7 @@ def test_session_aware_proof_denies_mismatch_and_expiry(tmp_path):
             db.add(User(user_id="owner", name="Test", email="boundary@example.invalid",
                         password_hash="synthetic", role="OWNER", active=True, mfa_enabled=True))
             db.add(AuthToken(token_id="EXPIRED-SESSION", user_id="owner",
-                             token_hash=hashlib.sha256(b"expired-jti").hexdigest(),
+                             token_hash=_hash_session_id("expired-jti"),
                              token_type="SESSION", expires_at=now - timedelta(seconds=1),
                              created_at=now - timedelta(minutes=10)))
             db.commit()
