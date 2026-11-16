@@ -1,11 +1,7 @@
-"""Diagnostic evidence for an OPEN logout/audit release blocker.
+"""Logout audit-write failure must roll back revocation and permit retry.
 
-These assertions characterize the current failure, not desired acceptance.
-Replace them with atomic-failure acceptance tests when remediation is added.
-No live routes, credentials or production databases are changed.
+Uses injected audit INSERT failures and disposable SQLite records only.
 """
-from unittest.mock import patch
-
 import psycopg
 import pytest
 import sqlalchemy as sa
@@ -20,7 +16,7 @@ from crownpath.models import AuditEvent, AuthToken, User
 
 
 @pytest.mark.parametrize("failure_kind", ["lock_timeout", "connection_loss"])
-def test_current_logout_audit_failure_leaves_missing_event(
+def test_logout_audit_failure_rolls_back_and_retries(
     monkeypatch, tmp_path, failure_kind,
 ):
     engine = sa.create_engine(
@@ -34,15 +30,16 @@ def test_current_logout_audit_failure_leaves_missing_event(
     marker = "synthetic-private-audit-error"
     attempts = []
 
-    class FailingAuditSession(Session):
-        def commit(self):
-            attempts.append("audit-write")
-            original = (
-                psycopg.errors.LockNotAvailable(marker)
-                if failure_kind == "lock_timeout"
-                else psycopg.OperationalError(marker)
-            )
-            raise sa.exc.OperationalError("synthetic audit insert", {}, original)
+    def fail_audit_insert(conn, cursor, statement, parameters, context, executemany):
+        if not statement.lstrip().upper().startswith("INSERT INTO AUDIT_EVENTS"):
+            return
+        attempts.append("audit-write")
+        original = (
+            psycopg.errors.LockNotAvailable(marker)
+            if failure_kind == "lock_timeout"
+            else psycopg.OperationalError(marker)
+        )
+        raise sa.exc.OperationalError("synthetic audit insert", {}, original)
 
     def logout_events():
         with Session(engine) as db:
@@ -67,29 +64,32 @@ def test_current_logout_audit_failure_leaves_missing_event(
             raise_server_exceptions=False,
         ) as client:
             client.cookies.set("crownpath_session", token)
-            with patch.object(audit, "session", lambda: FailingAuditSession(engine)):
+            sa.event.listen(engine, "before_cursor_execute", fail_audit_insert)
+            try:
                 failed = client.post("/api/auth/logout")
+            finally:
+                sa.event.remove(engine, "before_cursor_execute", fail_audit_insert)
             assert attempts == ["audit-write"]
-            assert failed.status_code == 500
+            assert failed.status_code == 503
+            assert failed.json() == {"detail": "Logout could not be confirmed. Please retry."}
             assert marker not in failed.text and token not in failed.text
             assert not any(
                 "crownpath_session=" in value
                 for value in failed.headers.get_list("set-cookie")
             )
             assert client.cookies.get("crownpath_session") == token
-            # Current gap: revocation committed before the audit transaction.
-            assert auth.decode_access_token(token) is None
+            # Audit INSERT failure must roll back the earlier session UPDATE.
+            assert auth.decode_access_token(token) == "audit-failure-owner"
             assert auth.decode_access_token(untouched) == "audit-failure-owner"
             with Session(engine) as db:
-                revoked = db.scalar(sa.select(AuthToken).where(
+                revoked = db.scalars(sa.select(AuthToken).where(
                     AuthToken.user_id == "audit-failure-owner",
                     AuthToken.used_at.is_not(None),
-                ))
-                assert revoked is not None
+                )).all()
+                assert revoked == []
             assert logout_events() == []
 
-            # Even after the audit store recovers, replay skips audit creation
-            # because the session has already been revoked.
+            # After audit recovery, retry commits both effects exactly once.
             retry = client.post("/api/auth/logout")
             assert retry.status_code == 200
             assert retry.json() == {"authenticated": False}
@@ -99,6 +99,15 @@ def test_current_logout_audit_failure_leaves_missing_event(
             )
             assert auth.decode_access_token(token) is None
             assert auth.decode_access_token(untouched) == "audit-failure-owner"
-            assert logout_events() == []
+            events = logout_events()
+            assert len(events) == 1
+            assert events[0].result == "SUCCESS"
+            assert events[0].user_id == "audit-failure-owner"
+            assert token not in str(events[0].reason)
+            client.cookies.set("crownpath_session", token)
+            replay = client.post("/api/auth/logout")
+            assert replay.status_code == 200
+            assert auth.decode_access_token(token) is None
+            assert len(logout_events()) == 1
     finally:
         engine.dispose()
