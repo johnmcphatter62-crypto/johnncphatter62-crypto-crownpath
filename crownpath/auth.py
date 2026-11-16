@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from crownpath.database import session
-from crownpath.models import AuthToken, User
+from crownpath.models import AuditEvent, AuthToken, User
 
 password_hash = PasswordHash.recommended()
 
@@ -138,6 +138,16 @@ def decode_access_token(token: str):
 
 
 def revoke_access_token(token: str) -> bool:
+    """Revoke a session without adding a logout-specific audit event."""
+    return _revoke_access_token(token, audit_logout=False)
+
+
+def revoke_access_token_with_audit(token: str) -> bool:
+    """Commit HTTP logout revocation and its audit event atomically."""
+    return _revoke_access_token(token, audit_logout=True)
+
+
+def _revoke_access_token(token: str, *, audit_logout: bool) -> bool:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("purpose") != "session":
@@ -150,6 +160,7 @@ def revoke_access_token(token: str) -> bool:
         return False
     db = session()
     try:
+        revoked_at = now_utc()
         result = db.execute(
             update(AuthToken)
             .where(
@@ -158,10 +169,18 @@ def revoke_access_token(token: str) -> bool:
                 AuthToken.token_type == "SESSION",
                 AuthToken.used_at.is_(None),
             )
-            .values(used_at=now_utc())
+            .values(used_at=revoked_at)
         )
+        if result.rowcount == 1 and audit_logout:
+            db.add(AuditEvent(
+                user_id=user_id, action="SESSION_LOGOUT", category="SECURITY",
+                result="SUCCESS", created_at=revoked_at,
+            ))
         db.commit()
         return result.rowcount == 1
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
