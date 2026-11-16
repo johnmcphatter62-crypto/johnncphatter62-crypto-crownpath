@@ -1,4 +1,6 @@
 """Fake-provider payload binding only; no real MFA, cookies, or payments."""
+from copy import deepcopy
+
 import pytest
 import sqlalchemy as sa
 
@@ -45,6 +47,8 @@ def request(fixture, **overrides):
         action=approved, key=KEY, now=101, csrf_verified=True, session_active=True,
     )
     values.update(overrides)
+    # Dispatch the same immutable-by-ownership snapshot that was authorized.
+    values["action"] = deepcopy(values["action"])
     if not consume_for_verified_fixture(engine, **values):
         return False
     provider.configure(values["action"])
@@ -124,3 +128,20 @@ def test_commit_failure_rolls_back_before_fake_provider_call(fixture):
         )) is None
     assert request(fixture)
     assert fixture[2].changes == [ACTION]
+
+
+def test_original_payload_mutation_cannot_change_dispatched_destination(fixture):
+    engine, token, provider, approved = fixture
+
+    def mutate_original_after_consumption(connection):
+        approved["destination_ref"] = "synthetic-destination-b"
+
+    sa.event.listen(engine, "commit", mutate_original_after_consumption)
+    try:
+        assert request(fixture)
+    finally:
+        sa.event.remove(engine, "commit", mutate_original_after_consumption)
+    assert approved["destination_ref"] == "synthetic-destination-b"
+    assert provider.changes == [ACTION]
+    assert not request(fixture)
+    assert provider.changes == [ACTION]
