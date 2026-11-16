@@ -3,7 +3,7 @@
 This module does not scan hardware, query the database, or expose an API.
 Callers must derive the principal from a verified server-side session.
 """
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 SUPPORTED_TRANSPORTS = frozenset({"bluetooth", "wifi"})
 
@@ -25,6 +25,10 @@ def visible_approved_devices(principal, devices):
         or not school_id
         or principal.get("active") is not True
     ):
+        return []
+
+    # Reject malformed containers instead of iterating arbitrary input or raising.
+    if not isinstance(devices, Sequence) or isinstance(devices, (str, bytes, bytearray)):
         return []
 
     allowed = []
