@@ -10,10 +10,11 @@ import secrets
 from datetime import datetime, timezone
 
 import jwt
-from sqlalchemy import insert, select, text
+from sqlalchemy import select, text
 
 from crownpath import auth
 from crownpath.models import AuthToken, User
+from crownpath.permissions import has_permission
 from tests.payment_action_binding_fixture import action_digest, _proof_hash
 
 ORIGIN = "https://testserver"
@@ -39,14 +40,14 @@ def _claims(cookie):
 
 def _lock_live_scope(db, claims, now):
     when = datetime.fromtimestamp(now, timezone.utc)
-    owner = db.execute(select(User.user_id).where(
+    owner = db.execute(select(User.user_id, User.role, User.active, User.mfa_enabled).where(
         User.user_id == claims["sub"], User.role == "OWNER",
         User.active.is_(True), User.mfa_enabled.is_(True),
-    ).with_for_update()).scalar_one_or_none()
-    if owner is None:
+    ).with_for_update()).mappings().one_or_none()
+    if owner is None or not has_permission(owner, "payments.configure"):
         return False
     session = db.execute(select(AuthToken.token_id).where(
-        AuthToken.user_id == owner,
+        AuthToken.user_id == owner["user_id"],
         AuthToken.token_hash == auth._hash_session_id(claims["jti"]),
         AuthToken.token_type == "SESSION", AuthToken.used_at.is_(None),
         AuthToken.expires_at > when,
