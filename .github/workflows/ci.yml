@@ -146,3 +146,50 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Run isolated Chromium smoke test
         run: python -m pytest -q tests/test_owner_progress_browser_playwright.py
+
+  postgres-atomic-logout:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: synthetic_logout
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: crownpath_disposable_logout_20261116
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U synthetic_logout -d crownpath_disposable_logout_20261116"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      CROWNPATH_ENV: staging
+      CROWNPATH_OWNER_LAUNCH_APPROVED: 'false'
+      CROWNPATH_TEST_DB_DISPOSABLE: 'YES'
+      CROWNPATH_DATABASE_URL: "sqlite:///:memory:"
+      CROWNPATH_ATOMIC_LOGOUT_POSTGRES_URL: postgresql+psycopg://synthetic_logout:disposable_ci_only@127.0.0.1:5432/crownpath_disposable_logout_20261116
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Verify isolated PostgreSQL logout rollback (must not skip)
+        run: |
+          python -m pytest -q -rs tests/test_payment_mfa_postgresql_atomic_logout.py --junitxml="$RUNNER_TEMP/logout-postgres.xml"
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          root = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "logout-postgres.xml")).getroot()
+          cases = root.findall(".//testcase")
+          assert len(cases) == 1, "Expected the PostgreSQL logout test"
+          assert not root.findall(".//skipped"), "Skipped test is not acceptance proof"
+          assert not root.findall(".//failure") and not root.findall(".//error")
+          print("PostgreSQL logout rollback and session isolation: executed, passed, no skips")
+          PY
