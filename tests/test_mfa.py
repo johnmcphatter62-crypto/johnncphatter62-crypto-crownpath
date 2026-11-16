@@ -488,8 +488,6 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertEqual(locked_login.status_code, 423, locked_login.text)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
     def test_mfa_enrollment_rotation_does_not_emit_logout_audit(self):
         self.enable_mfa()
@@ -513,3 +511,33 @@ if __name__ == "__main__":
             self.assertEqual(count, 1)
         finally:
             db.close()
+
+    def test_setup_cannot_reset_already_enabled_mfa(self):
+        from crownpath.auth import get_user_by_id, start_mfa_setup
+        self.enable_mfa()
+        before = get_user_by_id(self.user["user_id"])
+        db = session()
+        try:
+            hashes_before = sorted(row.token_hash for row in db.query(AuthToken).filter(
+                AuthToken.user_id == self.user["user_id"],
+                AuthToken.token_type == "MFA_RECOVERY",
+            ))
+        finally:
+            db.close()
+        with self.assertRaisesRegex(ValueError, "already-enabled"):
+            start_mfa_setup(self.user["user_id"])
+        after = get_user_by_id(self.user["user_id"])
+        self.assertTrue(after["mfa_enabled"])
+        self.assertEqual(after["mfa_secret"], before["mfa_secret"])
+        db = session()
+        try:
+            hashes_after = sorted(row.token_hash for row in db.query(AuthToken).filter(
+                AuthToken.user_id == self.user["user_id"],
+                AuthToken.token_type == "MFA_RECOVERY",
+            ))
+            self.assertEqual(hashes_after, hashes_before)
+            self.assertEqual(len(hashes_after), 8)
+        finally:
+            db.close()
+if __name__ == "__main__":
+    unittest.main()

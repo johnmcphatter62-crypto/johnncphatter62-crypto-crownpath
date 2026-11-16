@@ -83,7 +83,25 @@ jobs:
       - name: Compile Python
         run: python -m compileall crownpath api
       - name: Run tests
-        run: python -m pytest -q tests --ignore=tests/test_owner_only_access.py --ignore=tests/test_postgres_curriculum_migration_integration.py
+        run: |
+          python -m pytest -q tests --ignore=tests/test_owner_only_access.py --ignore=tests/test_postgres_curriculum_migration_integration.py --junitxml="$RUNNER_TEMP/application-results.xml"
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          root = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "application-results.xml")).getroot()
+          required = {
+              "test_mfa_enrollment_rotation_does_not_emit_logout_audit",
+              "test_setup_cannot_reset_already_enabled_mfa",
+          }
+          cases = [case for case in root.findall(".//testcase") if
+                   case.get("name") in required and
+                   case.get("classname", "").endswith("MfaIntegrationTest")]
+          assert {case.get("name") for case in cases} == required, "MFA regressions were not collected"
+          assert len(cases) == 2
+          assert not any(case.find(tag) is not None for case in cases
+                         for tag in ("skipped", "failure", "error"))
+          print("MFA rotation-audit and enabled-setup regressions: executed, passed, no skips")
+          PY
   migration:
     runs-on: ubuntu-latest
     services:
@@ -182,13 +200,13 @@ jobs:
           pip install pytest httpx
       - name: Verify isolated PostgreSQL logout rollback (must not skip)
         run: |
-          python -m pytest -q -rs tests/test_payment_mfa_postgresql_atomic_logout.py tests/test_payment_mfa_postgres_logout_consume_race.py tests/test_payment_mfa_postgres_lock_timeout.py tests/test_logout_http_postgres_audit.py --junitxml="$RUNNER_TEMP/logout-postgres.xml"
+          python -m pytest -q -rs tests/test_payment_mfa_postgresql_atomic_logout.py tests/test_payment_mfa_postgres_logout_consume_race.py tests/test_payment_mfa_postgres_lock_timeout.py tests/test_logout_http_postgres_audit.py tests/test_mfa_postgres_stale_setup.py --junitxml="$RUNNER_TEMP/logout-postgres.xml"
           python - <<'PY'
           import os
           import xml.etree.ElementTree as ET
           root = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "logout-postgres.xml")).getroot()
           cases = root.findall(".//testcase")
-          assert len(cases) == 10, "Expected proof and actual HTTP PostgreSQL acceptance cases"
+          assert len(cases) == 11, "Expected logout, HTTP audit and stale MFA PostgreSQL cases"
           assert not root.findall(".//skipped"), "Skipped test is not acceptance proof"
           assert not root.findall(".//failure") and not root.findall(".//error")
           print("PostgreSQL logout rollback and session isolation: executed, passed, no skips")
