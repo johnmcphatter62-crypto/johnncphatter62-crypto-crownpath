@@ -265,7 +265,10 @@ def mfa_verify(payload:MfaVerifyRequest,response:Response):
 @app.post("/api/auth/mfa/setup")
 def mfa_setup(user=Depends(current_user)):
     if user["mfa_enabled"]: raise HTTPException(409,"Multi-factor authentication is already enabled.")
-    secret=start_mfa_setup(user["user_id"])
+    try:
+        secret=start_mfa_setup(user["user_id"])
+    except ValueError:
+        raise HTTPException(409,"Multi-factor authentication setup is no longer available.")
     uri=mfa_provisioning_uri(user["user_id"],user["email"])
     return {"secret":secret,"provisioning_uri":uri,"message":"Add this account to your authenticator app, then enter the current 6-digit code to confirm."}
 
