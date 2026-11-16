@@ -182,13 +182,13 @@ jobs:
           pip install pytest
       - name: Verify isolated PostgreSQL logout rollback (must not skip)
         run: |
-          python -m pytest -q -rs tests/test_payment_mfa_postgresql_atomic_logout.py tests/test_payment_mfa_postgres_logout_consume_race.py --junitxml="$RUNNER_TEMP/logout-postgres.xml"
+          python -m pytest -q -rs tests/test_payment_mfa_postgresql_atomic_logout.py tests/test_payment_mfa_postgres_logout_consume_race.py tests/test_payment_mfa_postgres_lock_timeout.py --junitxml="$RUNNER_TEMP/logout-postgres.xml"
           python - <<'PY'
           import os
           import xml.etree.ElementTree as ET
           root = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "logout-postgres.xml")).getroot()
           cases = root.findall(".//testcase")
-          assert len(cases) == 3, "Expected logout acceptance and both commit-order cases"
+          assert len(cases) == 7, "Expected logout acceptance, commit orders and lock-timeout cases"
           assert not root.findall(".//skipped"), "Skipped test is not acceptance proof"
           assert not root.findall(".//failure") and not root.findall(".//error")
           print("PostgreSQL logout rollback and session isolation: executed, passed, no skips")
