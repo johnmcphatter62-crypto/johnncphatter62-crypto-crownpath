@@ -126,3 +126,19 @@ def test_role_or_account_change_before_consumption_denies(real_stepup, change):
     assert provider.changes == []
     with engine.connect() as db:
         assert db.scalar(sa.text("SELECT used_at FROM payment_action_bound_proofs_test")) is None
+
+
+def test_canonical_payment_permission_is_required_at_issue_and_use(real_stepup, monkeypatch):
+    from crownpath import permissions
+    proof = issue(real_stepup)
+    assert proof
+    with monkeypatch.context() as denied:
+        denied.setitem(
+            permissions.ROLE_PERMISSIONS, "OWNER",
+            permissions.ROLE_PERMISSIONS["OWNER"] - {"payments.configure"},
+        )
+        assert issue(real_stepup) is None
+        assert not apply(real_stepup, proof)
+        assert real_stepup[3].changes == []
+    assert apply(real_stepup, proof)
+    assert real_stepup[3].changes == [ACTION]
