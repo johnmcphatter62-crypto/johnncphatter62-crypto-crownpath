@@ -45,6 +45,23 @@ def test_matching_active_owner_grant(db):
     assert owner_authorized_for_school(db, "owner-a", "school-a", now=NOW)
 
 
+def test_duplicate_active_grants_deny_until_duplicate_is_revoked(db):
+    assert owner_authorized_for_school(db, "owner-a", "school-a", now=NOW)
+    db.execute(sa.text(
+        "INSERT INTO school_owner_authorizations VALUES "
+        "('grant-duplicate', 'school-a', 'owner-a', TRUE, :granted, NULL, :expires)"
+    ), {"granted": NOW - timedelta(days=1), "expires": NOW + timedelta(days=1)})
+    db.commit()
+    assert not owner_authorized_for_school(db, "owner-a", "school-a", now=NOW)
+
+    db.execute(sa.text(
+        "UPDATE school_owner_authorizations SET revoked_at = :now "
+        "WHERE authorization_id = 'grant-duplicate'"
+    ), {"now": NOW})
+    db.commit()
+    assert owner_authorized_for_school(db, "owner-a", "school-a", now=NOW)
+
+
 def test_cross_school_owner_is_denied(db):
     assert not owner_authorized_for_school(db, "owner-a", "school-b", now=NOW)
     assert not owner_authorized_for_school(db, "owner-b", "school-a", now=NOW)
