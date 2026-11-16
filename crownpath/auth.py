@@ -491,9 +491,19 @@ def start_mfa_setup(user_id: str):
         user = db.get(User, user_id)
         if not user:
             raise ValueError("User not found.")
-        user.mfa_secret = secret
-        user.mfa_enabled = False
+        # Recheck enrollment at the write boundary, not only in the HTTP
+        # dependency snapshot. A concurrent enable must never be reset.
+        claim = db.execute(
+            update(User)
+            .where(User.user_id == user_id, User.mfa_enabled.is_(False))
+            .values(mfa_secret=secret)
+        )
+        if claim.rowcount != 1:
+            raise ValueError("MFA setup is unavailable for an already-enabled account.")
         db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
     return secret
