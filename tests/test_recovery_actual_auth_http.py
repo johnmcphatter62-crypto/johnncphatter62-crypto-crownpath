@@ -1,3 +1,4 @@
+from tests.owner_mfa_fixture import enroll_owner_for_test
 """Actual CrownPath HTTP authentication boundary for recovery-plan access.
 
 Disposable SQLite users and real application cookie/session validation.
@@ -42,6 +43,7 @@ def test_recovery_plan_requires_real_owner_session(monkeypatch, tmp_path):
                 "email": "fictional-owner@example.com", "password": password,
             })
             assert owner_login.status_code == 200, owner_login.text
+            enroll_owner_for_test(client)
             assert client.get("/api/release/recovery-plan").status_code == 200
             client.post("/api/auth/logout")
             assert client.get("/api/release/recovery-plan").status_code == 401

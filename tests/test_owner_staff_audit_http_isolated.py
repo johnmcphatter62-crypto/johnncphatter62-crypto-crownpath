@@ -1,3 +1,4 @@
+from tests.owner_mfa_fixture import enroll_owner_for_test
 """Synthetic Owner staff-change audit HTTP checks in disposable SQLite."""
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -41,6 +42,7 @@ def test_owner_staff_changes_generate_audit_events(monkeypatch, tmp_path):
                 "email": "staff-audit-owner@example.com", "password": password,
             })
             assert login.status_code == 200, login.text
+            enroll_owner_for_test(client)
             role = client.patch("/api/owner/users/synthetic-learner/role", json={
                 "role": "BARBER", "active": True,
             })
