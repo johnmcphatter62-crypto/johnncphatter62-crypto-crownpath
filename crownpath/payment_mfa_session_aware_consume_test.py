@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from crownpath.auth import _hash_session_id
+
 
 def consume_with_active_session_test(engine, *, token, user_id, session_id, now=None):
     """Consume proof only while matching AuthToken is active, in one SQL update.
@@ -20,7 +22,7 @@ def consume_with_active_session_test(engine, *, token, user_id, session_id, now=
         return False
     when = datetime.now(timezone.utc) if now is None else now
     proof_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    session_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+    session_hash = _hash_session_id(session_id)
     with Session(engine) as db:
         with db.begin():
             result = db.execute(text("""
