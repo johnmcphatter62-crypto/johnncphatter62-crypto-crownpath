@@ -25,8 +25,8 @@ def test_malformed_container_denied_without_exception(devices):
 
 def test_sequence_filters_malformed_records_but_keeps_authorized_device():
     records = [None, 42, "invalid", {}, DEVICE,
-               dict(DEVICE, approved=False),
-               dict(DEVICE, school_id="another-school")]
+               dict(DEVICE, id="unapproved", approved=False),
+               dict(DEVICE, id="foreign", school_id="another-school")]
     assert [d["id"] for d in visible_approved_devices(PRINCIPAL, records)] == ["approved"]
 
 
