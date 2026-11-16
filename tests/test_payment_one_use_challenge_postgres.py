@@ -5,6 +5,7 @@ import sqlalchemy as sa
 from tests import test_payment_one_use_action_challenge as checks
 from tests.payment_one_use_challenge_fixture import create_action_challenge_test_schema
 from tests.test_payment_real_stepup_postgres import real_stepup_postgres
+from tests.test_payment_mfa_postgresql_atomic_logout import isolated_logout_engine
 from tests.test_payment_real_stepup_binding import apply
 from tests.test_payment_action_payload_binding import ACTION
 
