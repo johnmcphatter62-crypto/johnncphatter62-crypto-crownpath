@@ -49,7 +49,8 @@ def visible_approved_devices(principal, devices):
             and device.get("school_id") == school_id
             and device.get("approved") is True
             and device.get("revoked") is False
-            and device.get("transport") in SUPPORTED_TRANSPORTS
+            and isinstance(device.get("transport"), str)
+            and device["transport"] in SUPPORTED_TRANSPORTS
             and isinstance(device.get("id"), str)
             and bool(device["id"])
             and id_counts[device["id"]] == 1
