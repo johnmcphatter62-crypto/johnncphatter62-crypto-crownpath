@@ -3,7 +3,6 @@
 The dedicated URL must never refer to production or restored real data.
 No application route is changed by this test.
 """
-from crownpath.auth import _hash_session_id
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -76,6 +75,8 @@ def test_postgres_atomic_logout_rollback_and_session_isolation(isolated_logout_e
     from crownpath.models import AuthToken, User
     from crownpath.payment_mfa_db_proof import issue_verified_proof, consume_proof
     from crownpath.payment_mfa_atomic_logout_test_adapter import revoke_session_and_proofs_test
+
+    from crownpath.auth import _hash_session_id
 
     engine = isolated_logout_engine
     now = datetime.now(timezone.utc)
