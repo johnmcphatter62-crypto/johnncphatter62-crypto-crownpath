@@ -31,6 +31,15 @@ def visible_approved_devices(principal, devices):
     if not isinstance(devices, Sequence) or isinstance(devices, (str, bytes, bytearray)):
         return []
 
+    # Duplicate identifiers are ambiguous even if one record is revoked or foreign.
+    # Hide every record sharing an identifier rather than selecting a winner.
+    id_counts = {}
+    for device in devices:
+        if isinstance(device, Mapping):
+            device_id = device.get("id")
+            if isinstance(device_id, str) and device_id:
+                id_counts[device_id] = id_counts.get(device_id, 0) + 1
+
     allowed = []
     for device in devices:
         if not isinstance(device, Mapping):
@@ -43,6 +52,7 @@ def visible_approved_devices(principal, devices):
             and device.get("transport") in SUPPORTED_TRANSPORTS
             and isinstance(device.get("id"), str)
             and bool(device["id"])
+            and id_counts[device["id"]] == 1
         ):
             allowed.append(dict(device))
     return allowed
