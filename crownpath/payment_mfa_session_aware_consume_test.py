@@ -13,10 +13,10 @@ from crownpath.auth import _hash_session_id
 
 
 def consume_with_active_session_test(engine, *, token, user_id, session_id, now=None):
-    """Consume proof only while matching AuthToken is active, in one SQL update.
+    """Consume only with an active session in the same transaction.
 
-    The EXISTS predicate is evaluated in the same statement as proof mutation.
-    PostgreSQL concurrency semantics still require separate integration tests.
+    PostgreSQL locks the session before the proof to serialize with logout.
+    SQLite retains its existing conditional-update test behavior.
     """
     if not all(isinstance(x, str) and x.strip() for x in (token, user_id, session_id)):
         return False
@@ -25,6 +25,23 @@ def consume_with_active_session_test(engine, *, token, user_id, session_id, now=
     session_hash = _hash_session_id(session_id)
     with Session(engine) as db:
         with db.begin():
+
+            # Match logout's lock order: session row first, then proof row.
+            # A concurrent logout must finish before this session can be used.
+            if engine.dialect.name == "postgresql":
+                from sqlalchemy import select
+                from crownpath.models import AuthToken
+                active = db.scalar(
+                    select(AuthToken.token_id).where(
+                        AuthToken.user_id == user_id,
+                        AuthToken.token_hash == session_hash,
+                        AuthToken.token_type == "SESSION",
+                        AuthToken.used_at.is_(None),
+                        AuthToken.expires_at > when,
+                    ).with_for_update()
+                )
+                if active is None:
+                    return False
             result = db.execute(text("""
                 UPDATE payment_mfa_proofs_test
                    SET used_at = :timestamp
