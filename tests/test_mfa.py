@@ -488,8 +488,6 @@ class MfaIntegrationTest(unittest.TestCase):
         self.assertEqual(locked_login.status_code, 423, locked_login.text)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
     def test_mfa_enrollment_rotation_does_not_emit_logout_audit(self):
         self.enable_mfa()
@@ -541,3 +539,5 @@ if __name__ == "__main__":
             self.assertEqual(len(hashes_after), 8)
         finally:
             db.close()
+if __name__ == "__main__":
+    unittest.main()
