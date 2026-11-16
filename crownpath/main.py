@@ -116,7 +116,7 @@ def current_user(request:Request):
 
 def require_permission(permission:str):
     def dependency(request:Request,user=Depends(current_user)):
-        if user["role"] == "OWNER" and (not user["mfa_enabled"] or not session_mfa_verified(request.cookies.get("crownpath_session", ""))):
+        if user["role"] == "OWNER" and (not user.get("mfa_enabled", False) or not session_mfa_verified(request.cookies.get("crownpath_session", ""))):
             raise HTTPException(403,"Verified Owner MFA session is required before privileged access.")
         if not has_permission(user,permission): raise HTTPException(403,"Permission denied.")
         return user
