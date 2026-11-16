@@ -3,7 +3,7 @@ ROLE_PERMISSIONS = {
         "dashboard.owner", "academy.view", "academy.manage", "live.view", "live.manage",
         "digital.view", "digital.manage", "inventory.view", "inventory.manage",
         "awareness.view", "regulatory.view", "regulatory.manage", "security.manage",
-        "staff.manage", "audit.view", "documents.view", "learners.view", "audio.view", "audio.manage",
+        "staff.manage", "payments.configure", "audit.view", "documents.view", "learners.view", "audio.view", "audio.manage",
     },
     "INSTRUCTOR": {
         "academy.view", "academy.manage_assigned", "live.view", "live.manage_assigned",

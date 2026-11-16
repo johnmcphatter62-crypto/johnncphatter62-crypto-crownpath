@@ -35,6 +35,8 @@ CURRICULUM_TABLES = {
     "curriculum_assessments",
 }
 
+SCHOOL_TABLES = {"schools", "school_memberships", "school_owner_authorizations"}
+
 
 def _ci_database_url():
     url = os.environ.get("CROWNPATH_DATABASE_URL", "")
@@ -76,25 +78,84 @@ def test_existing_core_schema_without_history_upgrades_and_downgrades(postgres_c
     assert before == CORE_TABLES
     assert "alembic_version" not in before
 
+    # Preserve a synthetic existing learner through both migration directions.
+    with engine.begin() as connection:
+        connection.execute(sa.text(
+            "INSERT INTO users (user_id, name, email, password_hash, role, active, "
+            "email_verified, mfa_enabled, failed_login_attempts, created_at) "
+            "VALUES (:user_id, :name, :email, :password_hash, :role, "
+            ":active, :email_verified, :mfa_enabled, :failed_login_attempts, :created_at)"
+        ), {
+            "user_id": "CP-USR-MIGRATION-TEST",
+            "name": "Migration Learner",
+            "email": "migration-learner@example.invalid",
+            "password_hash": "synthetic-not-a-password",
+            "role": "BARBER",
+            "active": True,
+            "email_verified": False,
+            "mfa_enabled": False,
+            "failed_login_attempts": 0,
+            "created_at": "2026-11-04 00:00:00",
+        })
+
     command.upgrade(_alembic_config(), "head")
 
     upgraded = set(sa.inspect(engine).get_table_names())
     assert CORE_TABLES.issubset(upgraded)
     assert CURRICULUM_TABLES.issubset(upgraded)
+    assert SCHOOL_TABLES.issubset(upgraded)
     assert "alembic_version" in upgraded
-    assert upgraded == CORE_TABLES | CURRICULUM_TABLES | {"alembic_version"}
+    assert upgraded == CORE_TABLES | CURRICULUM_TABLES | SCHOOL_TABLES | {"alembic_version"}
+
+    # Newly migrated school Owner grants are empty and fail closed by default.
+    with engine.connect() as connection:
+        grants = connection.scalar(sa.text(
+            "SELECT COUNT(*) FROM school_owner_authorizations"
+        ))
+        assert grants == 0
+        grant_columns = {
+            column["name"]: column
+            for column in sa.inspect(connection).get_columns("school_owner_authorizations")
+        }
+        assert grant_columns["school_id"]["nullable"] is False
+        assert grant_columns["owner_user_id"]["nullable"] is False
+        assert grant_columns["active"]["nullable"] is False
+        assert grant_columns["revoked_at"]["nullable"] is True
+        assert grant_columns["expires_at"]["nullable"] is True
+        unique_constraints = sa.inspect(connection).get_unique_constraints(
+            "school_owner_authorizations"
+        )
+        assert any(
+            set(item["column_names"]) == {"school_id", "owner_user_id"}
+            for item in unique_constraints
+        )
 
     with engine.connect() as connection:
         revision = connection.scalar(sa.text("SELECT version_num FROM alembic_version"))
-    assert revision == "20260928_01"
+    assert revision == "20261104_03"
+    with engine.connect() as connection:
+        learner = connection.execute(sa.text(
+            "SELECT email, role, active FROM users WHERE user_id = :user_id"
+        ), {"user_id": "CP-USR-MIGRATION-TEST"}).one()
+    assert learner.email == "migration-learner@example.invalid"
+    assert learner.role == "BARBER"
+    assert learner.active is True
 
     command.downgrade(_alembic_config(), "20260928_00")
 
     downgraded = set(sa.inspect(engine).get_table_names())
     assert CORE_TABLES.issubset(downgraded)
     assert CURRICULUM_TABLES.isdisjoint(downgraded)
+    assert SCHOOL_TABLES.isdisjoint(downgraded)
     assert downgraded == CORE_TABLES | {"alembic_version"}
 
     with engine.connect() as connection:
         revision = connection.scalar(sa.text("SELECT version_num FROM alembic_version"))
     assert revision == "20260928_00"
+    with engine.connect() as connection:
+        learner = connection.execute(sa.text(
+            "SELECT email, role, active FROM users WHERE user_id = :user_id"
+        ), {"user_id": "CP-USR-MIGRATION-TEST"}).one()
+    assert learner.email == "migration-learner@example.invalid"
+    assert learner.role == "BARBER"
+    assert learner.active is True

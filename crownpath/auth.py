@@ -109,7 +109,12 @@ def _active_session(user_id: str, session_id: str) -> bool:
             AuthToken.token_type == "SESSION",
             AuthToken.used_at.is_(None),
         ))
-        return bool(token and token.expires_at >= now_utc())
+        if not token:
+            return False
+        expires_at = token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at >= now_utc()
     finally:
         db.close()
 
@@ -430,7 +435,14 @@ def _clear_login_failures(user_id):
 
 def _is_locked(user):
     locked_until = user.get("locked_until")
-    return bool(locked_until and locked_until > now_utc())
+    if locked_until is None:
+        return False
+    # SQLite may return a naive timestamp for a timezone-aware SQLAlchemy
+    # column. CrownPath stores UTC timestamps; interpret legacy naive values
+    # as UTC rather than raising during authentication.
+    if locked_until.tzinfo is None:
+        locked_until = locked_until.replace(tzinfo=timezone.utc)
+    return locked_until > now_utc()
 
 
 def authenticate(email: str, password: str):

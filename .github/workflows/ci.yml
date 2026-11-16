@@ -123,3 +123,26 @@ jobs:
         run: python -m compileall crownpath api
       - name: Run tests
         run: python -m pytest -q tests/test_postgres_curriculum_migration_integration.py
+  browser-smoke:
+    runs-on: ubuntu-latest
+    env:
+      CROWNPATH_ENV: staging
+      CROWNPATH_OWNER_LAUNCH_APPROVED: "false"
+      CROWNPATH_LEARNER_ACCESS_APPROVED: "false"
+      CROWNPATH_LEARNER_ENROLLMENT_APPROVED: "false"
+      CROWNPATH_INSTRUCTOR_ACCESS_APPROVED: "false"
+      CROWNPATH_SECRET_KEY: ci-only-browser-smoke-key
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser smoke dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest playwright
+          python -m playwright install --with-deps chromium
+      - name: Run isolated Chromium smoke test
+        run: python -m pytest -q tests/test_owner_progress_browser_playwright.py
