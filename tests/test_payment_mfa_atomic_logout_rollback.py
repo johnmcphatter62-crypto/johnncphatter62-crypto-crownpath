@@ -1,5 +1,5 @@
 """Isolated rollback check for the experimental atomic logout adapter."""
-import hashlib
+from crownpath.auth import _hash_session_id
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -22,7 +22,7 @@ def test_rollback_then_success(tmp_path):
             db.add(User(user_id="owner", name="Test", email="rollback@example.invalid",
                         password_hash="synthetic", role="OWNER", active=True, mfa_enabled=True))
             db.add(AuthToken(token_id="ROLLBACK", user_id="owner",
-                             token_hash=hashlib.sha256(b"jti").hexdigest(),
+                             token_hash=_hash_session_id("jti"),
                              token_type="SESSION", expires_at=now + timedelta(minutes=10),
                              created_at=now))
             db.commit()

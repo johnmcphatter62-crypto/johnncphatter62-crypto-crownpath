@@ -3,7 +3,7 @@
 This checks the ordered case where logout commits before proof consumption.
 It does not claim to prove every possible concurrent interleaving.
 """
-import hashlib
+from crownpath.auth import _hash_session_id
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
@@ -25,7 +25,7 @@ def test_logout_commit_precedes_competing_proof_use(tmp_path):
             db.add(User(user_id="owner", name="Test", email="ordered-race@example.invalid",
                         password_hash="synthetic", role="OWNER", active=True, mfa_enabled=True))
             db.add(AuthToken(token_id="RACE", user_id="owner",
-                             token_hash=hashlib.sha256(b"race-jti").hexdigest(),
+                             token_hash=_hash_session_id("race-jti"),
                              token_type="SESSION", expires_at=now + timedelta(minutes=10),
                              created_at=now))
             db.commit()

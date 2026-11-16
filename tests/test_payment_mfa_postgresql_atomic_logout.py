@@ -3,7 +3,6 @@
 The dedicated URL must never refer to production or restored real data.
 No application route is changed by this test.
 """
-import hashlib
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -72,10 +71,12 @@ def isolated_logout_engine():
         admin.dispose()
 
 
-def test_postgres_atomic_logout_rollback_and_session_isolation(isolated_logout_engine):
+def test_postgres_atomic_logout_rollback_and_session_isolation(isolated_logout_engine, monkeypatch):
     from crownpath.models import AuthToken, User
     from crownpath.payment_mfa_db_proof import issue_verified_proof, consume_proof
     from crownpath.payment_mfa_atomic_logout_test_adapter import revoke_session_and_proofs_test
+
+    from crownpath.auth import _hash_session_id
 
     engine = isolated_logout_engine
     now = datetime.now(timezone.utc)
@@ -88,7 +89,7 @@ def test_postgres_atomic_logout_rollback_and_session_isolation(isolated_logout_e
         db.flush()
         for uid, sid in scopes:
             db.add(AuthToken(token_id=sid, user_id=uid,
-                             token_hash=hashlib.sha256(sid.encode()).hexdigest(),
+                             token_hash=_hash_session_id(sid),
                              token_type="SESSION", expires_at=now + timedelta(minutes=10), created_at=now))
         db.commit()
     proofs = {sid: issue_verified_proof(engine, user_id=uid, session_id=sid, now=timestamp)
@@ -124,3 +125,59 @@ def test_postgres_atomic_logout_rollback_and_session_isolation(isolated_logout_e
         assert tokens[sid] is None
     assert not consume_proof(engine, token=proofs["target"], user_id="owner", session_id="target", now=timestamp + 1)
     assert not revoke_session_and_proofs_test(engine, user_id="owner", session_id="target", now=now)
+
+    # Use the real issuer and decoder, bound only to this disposable schema.
+    import jwt
+    from sqlalchemy.orm import sessionmaker
+    from crownpath import auth
+    monkeypatch.setattr(auth, "session", sessionmaker(bind=engine))
+    issued = auth.create_access_token("owner")
+    assert auth.decode_access_token(issued) == "owner"
+    claims = jwt.decode(issued, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+    real_jti = claims["jti"]
+    issued_now = datetime.now(timezone.utc)
+    issued_timestamp = int(issued_now.timestamp())
+    issued_proof = issue_verified_proof(
+        engine, user_id="owner", session_id=real_jti, now=issued_timestamp,
+    )
+    assert not revoke_session_and_proofs_test(
+        engine, user_id="other-owner", session_id=real_jti, now=issued_now,
+    )
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        revoke_session_and_proofs_test(
+            engine, user_id="owner", session_id=real_jti, now=issued_now,
+            fail_after_session_update=True,
+        )
+    assert auth.decode_access_token(issued) == "owner"
+    with engine.connect() as conn:
+        assert conn.scalar(sa.text(
+            "SELECT used_at FROM payment_mfa_proofs_test WHERE session_id=:sid"
+        ), {"sid": real_jti}) is None
+    assert revoke_session_and_proofs_test(
+        engine, user_id="owner", session_id=real_jti, now=issued_now,
+    )
+    assert auth.decode_access_token(issued) is None
+    assert not consume_proof(
+        engine, token=issued_proof, user_id="owner", session_id=real_jti,
+        now=issued_timestamp + 1,
+    )
+    assert not revoke_session_and_proofs_test(
+        engine, user_id="owner", session_id=real_jti, now=issued_now,
+    )
+
+    # Plain SHA fixtures must not be accepted as real sessions.
+    import hashlib
+    legacy_jti = "synthetic-plain-hash-only"
+    with Session(engine) as db:
+        db.add(AuthToken(
+            token_id="plain-hash-only", user_id="owner",
+            token_hash=hashlib.sha256(legacy_jti.encode()).hexdigest(),
+            token_type="SESSION", expires_at=issued_now + timedelta(minutes=10),
+            created_at=issued_now,
+        ))
+        db.commit()
+    assert not revoke_session_and_proofs_test(
+        engine, user_id="owner", session_id=legacy_jti, now=issued_now,
+    )
+    with Session(engine) as db:
+        assert db.get(AuthToken, "plain-hash-only").used_at is None

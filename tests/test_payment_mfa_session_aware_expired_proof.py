@@ -1,5 +1,5 @@
 """Expired payment proof must fail even with an otherwise active session."""
-import hashlib
+from crownpath.auth import _hash_session_id
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
@@ -21,7 +21,7 @@ def test_expired_proof_rejected_with_active_session(tmp_path):
             db.add(User(user_id="owner", name="Test", email="expired-proof@example.invalid",
                         password_hash="synthetic", role="OWNER", active=True, mfa_enabled=True))
             db.add(AuthToken(token_id="PROOF-EXPIRY", user_id="owner",
-                             token_hash=hashlib.sha256(b"expiry-jti").hexdigest(),
+                             token_hash=_hash_session_id("expiry-jti"),
                              token_type="SESSION", expires_at=now + timedelta(minutes=10),
                              created_at=now))
             db.commit()

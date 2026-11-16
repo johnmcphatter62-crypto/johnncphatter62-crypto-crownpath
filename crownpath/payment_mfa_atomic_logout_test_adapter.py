@@ -1,14 +1,14 @@
 """Test-only atomic logout and proof revocation using actual AuthToken ORM.
 
-Not integrated into live logout routes. Both updates use one disposable SQLite
+Not integrated into live logout routes. Both updates use one disposable database
 transaction, so an exception rolls back both state changes.
 """
-import hashlib
 from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from crownpath.auth import _hash_session_id
 from crownpath.models import AuthToken
 
 
@@ -25,7 +25,7 @@ def revoke_session_and_proofs_test(engine, *, user_id, session_id, now=None,
         return False
     when = datetime.now(timezone.utc) if now is None else now
     proof_timestamp = int(when.timestamp())
-    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+    digest = _hash_session_id(session_id)
     with Session(engine) as db:
         with db.begin():
             result = db.execute(
