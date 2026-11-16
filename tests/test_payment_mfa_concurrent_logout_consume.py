@@ -3,7 +3,7 @@
 SQLite serializes competing writers. Whichever operation commits first may
 win; if logout wins, the proof must not subsequently be consumable.
 """
-import hashlib
+from crownpath.auth import _hash_session_id
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import Barrier
@@ -27,7 +27,7 @@ def test_competing_logout_and_proof_consume(tmp_path):
             db.add(User(user_id="owner", name="Test", email="concurrent@example.invalid",
                         password_hash="synthetic", role="OWNER", active=True, mfa_enabled=True))
             db.add(AuthToken(token_id="CONCURRENT", user_id="owner",
-                             token_hash=hashlib.sha256(b"concurrent-jti").hexdigest(),
+                             token_hash=_hash_session_id("concurrent-jti"),
                              token_type="SESSION", expires_at=now + timedelta(minutes=10),
                              created_at=now))
             db.commit()
