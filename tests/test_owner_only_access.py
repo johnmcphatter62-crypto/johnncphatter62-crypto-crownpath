@@ -1,6 +1,8 @@
 import os
 import unittest
 import uuid
+
+import pyotp
 from unittest.mock import patch
 
 os.environ.setdefault("CROWNPATH_ENV", "staging")
@@ -18,6 +20,7 @@ from crownpath.models import AuthToken, User
 class OwnerOnlyAccessTest(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
+        self.client.headers.update({'Origin': 'http://testserver'})
         self.password = "CrownPath-Owner-Test-2026!"
         self.suffix = uuid.uuid4().hex[:12]
         self.user_ids = []
@@ -105,6 +108,10 @@ class OwnerOnlyAccessTest(unittest.TestCase):
                         self.assertEqual(self.client.get(path).status_code, 403)
             self.client.cookies.clear()
             self.assertEqual(self.login(owner_email).status_code, 200)
+            setup = self.client.post("/api/auth/mfa/setup")
+            self.assertEqual(setup.status_code, 200, setup.text)
+            enabled = self.client.post("/api/auth/mfa/enable", json={"code": pyotp.TOTP(setup.json()["secret"]).now()})
+            self.assertEqual(enabled.status_code, 200, enabled.text)
             for path in paths:
                 with self.subTest(path=path, account="owner"):
                     self.assertEqual(self.client.get(path).status_code, 200)
