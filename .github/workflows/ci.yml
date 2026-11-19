@@ -206,7 +206,7 @@ jobs:
           import xml.etree.ElementTree as ET
           root = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "logout-postgres.xml")).getroot()
           cases = root.findall(".//testcase")
-          assert len(cases) == 81, "Expected 81 PostgreSQL acceptance cases including first-Owner activation"
+          assert len(cases) == 82, "Expected 82 PostgreSQL acceptance cases including first-Owner activation"
           assert not root.findall(".//skipped"), "Skipped test is not acceptance proof"
           assert not root.findall(".//failure") and not root.findall(".//error")
           print("PostgreSQL logout rollback and session isolation: executed, passed, no skips")
