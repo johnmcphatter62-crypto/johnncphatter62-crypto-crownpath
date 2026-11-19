@@ -9,7 +9,7 @@ import jwt
 import pyotp
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from crownpath.database import session
@@ -319,11 +319,19 @@ def create_owner(name: str, email: str, password: str, activation_code: str):
         raise ValueError("Owner activation identity does not match.")
     if not hmac.compare_digest(activation_code, configured_code):
         raise ValueError("Invalid owner activation code.")
-    if owner_exists():
-        raise ValueError("Owner activation is already complete.")
-
     db = session()
     try:
+        # Serialize the existence check and insert even when no Owner row exists.
+        dialect = db.get_bind().dialect.name
+        if dialect == "postgresql":
+            db.execute(text("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE"))
+        elif dialect == "sqlite":
+            db.execute(text("BEGIN IMMEDIATE"))
+        else:
+            raise ValueError("Owner activation is unavailable on this database.")
+        if db.scalar(select(User.user_id).where(User.role == "OWNER").limit(1)) is not None:
+            raise ValueError("Owner activation is already complete.")
+
         existing = db.scalar(select(User).where(User.email == supplied_email))
         if existing:
             # Activation is for a new Owner identity only. Never overwrite an
