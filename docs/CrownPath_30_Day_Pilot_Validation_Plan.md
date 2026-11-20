@@ -198,3 +198,9 @@ Start with the existing plan for 5–10 invited testers. Use fictional cases or 
 | Owner go-ahead | Record the preview URL, tested commit, cohort start date, and Owner decision before sending invitations. |
 
 After the 30 days, apply the existing success standards and record the decision. A paid or public release is a separate decision that also needs verified hosting, production access controls, and readiness for any features offered to customers.
+
+## Classroom content available for the pilot
+
+Use the existing **Hair & Scalp Science** lesson as the starting point for Scalp Care Foundations. CrownPath has separate Barber and Cosmetology versions (`barber-hair-scalp` and `cosmetology-hair-scalp`). Assign each learner the version for their pathway. Keep the pilot's manual observation exercise separate from the camera-assessment lesson.
+
+The repository has automated checks for lesson access by pathway and progress tracking. The hosted pilot still needs a walkthrough of the selected lesson, manual exercise, safety check, and feedback collection. For the first dry run, use fictional cases and record feedback separately under participant codes until an in-app feedback workflow is verified.
