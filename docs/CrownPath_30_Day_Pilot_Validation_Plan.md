@@ -183,3 +183,18 @@ __________________________________________________________________
 
 **Owner signature:** ___________________________  
 **Date:** ___________________
+
+## Pilot launch decision
+
+Start with the existing plan for 5–10 invited testers. Use fictional cases or approved teaching images for the first cohort. Use the invitation above after the pilot is ready.
+
+| Gate | Evidence needed before inviting testers |
+| --- | --- |
+| Working preview | Identify the hosting project and preview URL. Confirm the deployed commit and demonstrate that the landing page and sign-in load. The repository's current Vercel homepage returned HTTP 500 in the last browser check. |
+| Owner access | Review [PR #76](https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/pull/76) and verify the selected candidate on PostgreSQL. Exercise Owner sign-in, MFA, and the ability to manage pilot access. Document the recovery limitations before launch. |
+| Learner access | Demonstrate invitation or account setup with a synthetic learner. Confirm a learner can reach the assigned lesson and cannot enter Owner areas. |
+| Lesson and feedback | Complete the lesson, manual exercise, safety check, and feedback flow end to end on desktop and mobile. Record where each step lives and its result. |
+| Operations | Verify preview logging, data handling, and the backup and restore procedure applicable to the pilot environment. Record who can pause access if an issue arises. |
+| Owner go-ahead | Record the preview URL, tested commit, cohort start date, and Owner decision before sending invitations. |
+
+After the 30 days, apply the existing success standards and record the decision. A paid or public release is a separate decision that also needs verified hosting, production access controls, and readiness for any features offered to customers.
