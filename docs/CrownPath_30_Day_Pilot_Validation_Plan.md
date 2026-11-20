@@ -223,3 +223,16 @@ Date: __________  Build or worksheet version: __________  Facilitator: _________
 | Learner completes feedback under a participant code | Pending | |
 
 The worksheet and feedback steps can be rehearsed offline. Record those results separately from the hosted checks. Log each issue with the step, expected behavior, observed behavior, and retest result. Leave the hosted rows pending until they are observed on the pilot build.
+
+## Offline worksheet rehearsal
+
+Reviewed the worksheet from the draft that passed [CI #1027](https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/44657523620). This rehearsal uses fictional answers and contributes no participant results to the pilot metrics.
+
+| Rehearsal step | Sample response and review |
+| --- | --- |
+| Case A | Observed fine flakes near the part. The client reported tightness after washing and no discomfort today. Ask when the tight feeling started and whether anything changed in the wash routine. Explain the visible observation in neutral language and discuss the planned service before proceeding. This separates observation from client report. |
+| Case B | Observed broken skin where the product would be applied. The client reported pain. Stop the planned chemical service and explain the reason without giving a diagnosis. This meets the worksheet's safety criterion. |
+| Case B correction | A sample response that proceeds with the chemical service does not pass. Ask the learner to revise the decision and explain it before recording a pass. |
+| Feedback | Record exercise completion separately from lesson completion in the facilitator log. Flag any difficulty identifying the appropriate lesson as a navigation issue during the hosted walkthrough. |
+
+Owner sign-in, learner access, and saved progress remain pending on Railway.
