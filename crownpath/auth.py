@@ -9,7 +9,7 @@ import jwt
 import pyotp
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from crownpath.database import session
@@ -282,24 +282,23 @@ def create_owner(name: str, email: str, password: str, activation_code: str):
         raise ValueError("Owner activation identity does not match.")
     if not hmac.compare_digest(activation_code, configured_code):
         raise ValueError("Invalid owner activation code.")
-    if owner_exists():
-        raise ValueError("Owner activation is already complete.")
-
     db = session()
     try:
-        existing = db.scalar(select(User).where(User.email == supplied_email))
-        if existing:
-            existing.name = name.strip()
-            existing.password_hash = hash_password(password)
-            existing.role = "OWNER"
-            existing.track = "OWNER"
-            existing.active = True
-            existing.email_verified = True
-            existing.failed_login_attempts = 0
-            existing.locked_until = None
-            db.commit()
-            db.refresh(existing)
-            return _user_dict(existing)
+        # Serialize first-Owner activation even when there is no Owner row to lock.
+        dialect = db.get_bind().dialect.name
+        if dialect == "postgresql":
+            db.execute(text("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE"))
+        elif dialect == "sqlite":
+            db.execute(text("BEGIN IMMEDIATE"))
+        else:
+            raise ValueError("Owner activation is unavailable on this database.")
+        owner_id = db.scalar(select(User.user_id).where(User.role == "OWNER").limit(1))
+        if owner_id is not None:
+            raise ValueError("Owner activation is already complete.")
+
+        existing = db.scalar(select(User.user_id).where(User.email == supplied_email))
+        if existing is not None:
+            raise ValueError("Existing account requires separately verified Owner provisioning.")
 
         user = User(
             user_id=f"CP-USR-{uuid.uuid4().hex[:12].upper()}",
