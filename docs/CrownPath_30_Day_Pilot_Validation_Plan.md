@@ -204,3 +204,22 @@ After the 30 days, apply the existing success standards and record the decision.
 Use the existing **Hair & Scalp Science** lesson as the starting point for Scalp Care Foundations. CrownPath has separate Barber and Cosmetology versions (`barber-hair-scalp` and `cosmetology-hair-scalp`). Assign each learner the version for their pathway. Keep the pilot's manual observation exercise separate from the camera-assessment lesson.
 
 The repository has automated checks for lesson access by pathway and progress tracking. The hosted pilot still needs a walkthrough of the selected lesson, manual exercise, safety check, and feedback collection. For the first dry run, use fictional cases and record feedback separately under participant codes until an in-app feedback workflow is verified.
+
+## First dry run record
+
+Open the [Scalp Care Foundations worksheet](CrownPath_Scalp_Care_Pilot_Worksheet.md). Run the exercise with fictional cases. Record what a learner can complete and where they need help.
+
+Date: __________  Build or worksheet version: __________  Facilitator: __________
+
+| Check | Result (pass, issue, or pending) | Notes |
+| --- | --- | --- |
+| Owner can sign in and manage pilot access | Pending | |
+| Barber test learner can open Hair & Scalp Science | Pending | |
+| Cosmetology test learner can open Hair & Scalp Science | Pending | |
+| A learner cannot open the other pathway's lesson | Pending | |
+| Lesson progress remains visible after reopening | Pending | |
+| Learner completes both fictional practice cases | Pending | |
+| Facilitator reviews the stop decision and records any correction | Pending | |
+| Learner completes feedback under a participant code | Pending | |
+
+The worksheet and feedback steps can be rehearsed offline. Record those results separately from the hosted checks. Log each issue with the step, expected behavior, observed behavior, and retest result. Leave the hosted rows pending until they are observed on the pilot build.
