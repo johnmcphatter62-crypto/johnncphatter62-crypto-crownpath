@@ -128,20 +128,22 @@ async function loadMigrationReadiness(){
   }catch(e){curriculumMessage.textContent=e.message}
 }
 async function loadCurriculumActivationPlan(){
-  const list=document.querySelector('#curriculumActivationPlan');list.innerHTML='';
+  const list=document.querySelector('#curriculumActivationPlan');list.replaceChildren(academyItem('Loading', 'Checking CrownPath…'));
   try{
     const data=await jsonRequest('/api/owner/curriculum/activation-plan');
+    list.replaceChildren();
     (data.steps||[]).forEach(item=>list.append(academyItem(`${item.sequence}. ${item.label}`,item.performed?'Performed':'Not performed')));
     (data.blockers||[]).forEach(item=>list.append(academyItem('Blocker',item)));
-  }catch(e){curriculumMessage.textContent=e.message}
+  }catch(e){list.replaceChildren(academyItem('Could not load this report', e.message));}
 }
 async function loadCurriculumReadiness(){
-  const list=document.querySelector('#curriculumReadiness');list.innerHTML='';
+  const list=document.querySelector('#curriculumReadiness');list.replaceChildren(academyItem('Loading', 'Checking CrownPath…'));
   try{
     const data=await jsonRequest('/api/owner/curriculum/readiness');
+    list.replaceChildren();
     (data.checks||[]).forEach(item=>list.append(academyItem(item.label,item.ready?`Ready • ${item.count}`:`Missing • ${item.count}`)));
     list.append(academyItem(data.ready_for_activation_review?'Ready for Owner activation review':'Not ready for activation review','This check does not activate curriculum or open learner access.'));
-  }catch(e){curriculumMessage.textContent=e.message}
+  }catch(e){list.replaceChildren(academyItem('Could not load this report', e.message));}
 }
 async function loadCurriculumApprovalHistory(){
   const list=document.querySelector('#curriculumApprovalHistory');list.innerHTML='';
