@@ -24,7 +24,17 @@ const curriculumMessage=document.querySelector('#curriculumMessage');
 const curriculumStructure=document.querySelector('#curriculumStructure');
 let activeLessonId=null;
 let mfaChallenge=null;
-async function jsonRequest(url,options={}){const response=await fetch(url,{...options,credentials:'same-origin',mode:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})}});let data={};try{data=await response.json()}catch(_){data={}}if(!response.ok)throw new Error(data.detail||'CrownPath request could not be completed.');return data}
+async function jsonRequest(url,options={}){const response=await fetch(url,{...options,credentials:'same-origin',mode:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})}});let data={};try{data=await response.json()}catch(_){data={}}if(!response.ok){
+    const detail=data?.detail;
+    let message='CrownPath request could not be completed.';
+    if(typeof detail==='string'&&detail.trim())message=detail;
+    else if(response.status===422&&url==='/api/auth/mfa/verify'){
+      message='Verification could not start. Sign in again, then enter a 6-digit authenticator code or an unused 8-digit recovery code.';
+    }else if(response.status===422){
+      message='Check the form fields and try again.';
+    }
+    throw new Error(message);
+  }return data}
 async function showHealth(){try{output.textContent=JSON.stringify(await jsonRequest('/api/health'),null,2)}catch(e){output.textContent='CrownPath health check unavailable: '+e.message}}
 function resetMfaLogin(){mfaChallenge=null;mfaLoginForm.hidden=true;document.querySelector('#loginForm').hidden=false;document.querySelector('#mfaLoginCode').value=''}
 function hideRecoveryCodes(){mfaRecoveryCodes.textContent='';mfaRecoveryPanel.hidden=true}
