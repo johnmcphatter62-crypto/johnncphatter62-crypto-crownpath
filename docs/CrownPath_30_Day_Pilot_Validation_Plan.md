@@ -183,3 +183,56 @@ __________________________________________________________________
 
 **Owner signature:** ___________________________  
 **Date:** ___________________
+
+## Pilot launch decision
+
+Start with the existing plan for 5–10 invited testers. Use fictional cases or approved teaching images for the first cohort. Use the invitation above after the pilot is ready.
+
+| Gate | Evidence needed before inviting testers |
+| --- | --- |
+| Working preview | Identify the hosting project and preview URL. Confirm the deployed commit and demonstrate that the landing page and sign-in load. The repository's current Vercel homepage returned HTTP 500 in the last browser check. |
+| Owner access | Review [PR #76](https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/pull/76) and verify the selected candidate on PostgreSQL. Exercise Owner sign-in, MFA, and the ability to manage pilot access. Document the recovery limitations before launch. |
+| Learner access | Demonstrate invitation or account setup with a synthetic learner. Confirm a learner can reach the assigned lesson and cannot enter Owner areas. |
+| Lesson and feedback | Complete the lesson, manual exercise, safety check, and feedback flow end to end on desktop and mobile. Record where each step lives and its result. |
+| Operations | Verify preview logging, data handling, and the backup and restore procedure applicable to the pilot environment. Record who can pause access if an issue arises. |
+| Owner go-ahead | Record the preview URL, tested commit, cohort start date, and Owner decision before sending invitations. |
+
+After the 30 days, apply the existing success standards and record the decision. A paid or public release is a separate decision that also needs verified hosting, production access controls, and readiness for any features offered to customers.
+
+## Classroom content available for the pilot
+
+Use the existing **Hair & Scalp Science** lesson as the starting point for Scalp Care Foundations. CrownPath has separate Barber and Cosmetology versions (`barber-hair-scalp` and `cosmetology-hair-scalp`). Assign each learner the version for their pathway. Keep the pilot's manual observation exercise separate from the camera-assessment lesson.
+
+The repository has automated checks for lesson access by pathway and progress tracking. The hosted pilot still needs a walkthrough of the selected lesson, manual exercise, safety check, and feedback collection. For the first dry run, use fictional cases and record feedback separately under participant codes until an in-app feedback workflow is verified.
+
+## First dry run record
+
+Open the [Scalp Care Foundations worksheet](CrownPath_Scalp_Care_Pilot_Worksheet.md). Run the exercise with fictional cases. Record what a learner can complete and where they need help.
+
+Date: __________  Build or worksheet version: __________  Facilitator: __________
+
+| Check | Result (pass, issue, or pending) | Notes |
+| --- | --- | --- |
+| Owner can sign in and manage pilot access | Pending | |
+| Barber test learner can open Hair & Scalp Science | Pending | |
+| Cosmetology test learner can open Hair & Scalp Science | Pending | |
+| A learner cannot open the other pathway's lesson | Pending | |
+| Lesson progress remains visible after reopening | Pending | |
+| Learner completes both fictional practice cases | Pending | |
+| Facilitator reviews the stop decision and records any correction | Pending | |
+| Learner completes feedback under a participant code | Pending | |
+
+The worksheet and feedback steps can be rehearsed offline. Record those results separately from the hosted checks. Log each issue with the step, expected behavior, observed behavior, and retest result. Leave the hosted rows pending until they are observed on the pilot build.
+
+## Offline worksheet rehearsal
+
+Reviewed the worksheet from the draft that passed [CI #1027](https://github.com/johnmcphatter62-crypto/johnncphatter62-crypto-crownpath/actions/runs/44657523620). This rehearsal uses fictional answers and contributes no participant results to the pilot metrics.
+
+| Rehearsal step | Sample response and review |
+| --- | --- |
+| Case A | Observed fine flakes near the part. The client reported tightness after washing and no discomfort today. Ask when the tight feeling started and whether anything changed in the wash routine. Explain the visible observation in neutral language and discuss the planned service before proceeding. This separates observation from client report. |
+| Case B | Observed broken skin where the product would be applied. The client reported pain. Stop the planned chemical service and explain the reason without giving a diagnosis. This meets the worksheet's safety criterion. |
+| Case B correction | A sample response that proceeds with the chemical service does not pass. Ask the learner to revise the decision and explain it before recording a pass. |
+| Feedback | Record exercise completion separately from lesson completion in the facilitator log. Flag any difficulty identifying the appropriate lesson as a navigation issue during the hosted walkthrough. |
+
+Owner sign-in, learner access, and saved progress remain pending on Railway.
