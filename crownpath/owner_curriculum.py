@@ -8,7 +8,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
 from crownpath.models import AuditEvent
 from crownpath.curriculum_models import (
@@ -285,6 +285,28 @@ def list_approval_history(db, user: dict, *, limit: int = 50) -> list[dict]:
 def curriculum_readiness(db, user: dict) -> dict:
     """Report Owner-only draft readiness without publishing or mutating curriculum."""
     require_owner(user)
+    schema = inspect(db.connection())
+    models = (
+        CurriculumProgram, CurriculumCourse, CurriculumUnit,
+        CurriculumLesson, CurriculumLessonVersion,
+    )
+    missing_tables = [
+        model.__tablename__ for model in models
+        if not schema.has_table(model.__tablename__)
+    ]
+    if missing_tables:
+        label = "Curriculum database tables are missing. Review the database migration."
+        return {
+            "ready_for_activation_review": False,
+            "activation_performed": False,
+            "learner_publishing_enabled": False,
+            "checks": [{
+                "key": "curriculum_schema", "label": label,
+                "ready": False, "count": len(missing_tables),
+            }],
+            "missing": [label],
+        }
+
     programs = db.scalars(select(CurriculumProgram)).all()
     courses = db.scalars(select(CurriculumCourse)).all()
     units = db.scalars(select(CurriculumUnit)).all()
