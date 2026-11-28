@@ -38,3 +38,23 @@ def test_no_publish_release_or_activation_route_added():
 
 def test_locked_condition_detection_not_added():
     assert "condition detection" not in (SERVICE+"\n"+MAIN+"\n"+HTML+"\n"+APP).lower()
+
+
+def test_unmigrated_database_returns_a_read_only_schema_blocker():
+    from sqlalchemy import create_engine, inspect
+    from sqlalchemy.orm import Session
+
+    from crownpath.owner_curriculum import activation_plan_preview, curriculum_readiness
+
+    engine = create_engine("sqlite://")
+    owner = {"role": "OWNER", "active": True}
+    with Session(engine) as db:
+        result = curriculum_readiness(db, owner)
+        assert result["ready_for_activation_review"] is False
+        assert result["checks"][0]["key"] == "curriculum_schema"
+        assert result["checks"][0]["ready"] is False
+        preview = activation_plan_preview(db, owner)
+        assert result["missing"][0] in preview["blockers"]
+        assert preview["migration_performed"] is False
+        assert inspect(db.connection()).get_table_names() == []
+    engine.dispose()
